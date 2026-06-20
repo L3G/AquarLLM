@@ -6,7 +6,7 @@
  *   GET  /healthz            liveness + agent count
  */
 import type { Server, ServerWebSocket } from "bun";
-import type { AgentEvent } from "@aquarllm/shared";
+import { type AgentEvent, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
 import { World } from "./world.ts";
 import { normalizeClaudeHook } from "./normalize.ts";
 
@@ -26,6 +26,33 @@ const CORS: Record<string, string> = {
 
 function broadcast(server: Server): void {
   server.publish(WORLD_TOPIC, JSON.stringify(world.snapshot()));
+}
+
+/** Build an activity-feed line if this event is a meaningful action (vs. a no-op repeat). */
+function makeLog(ev: AgentEvent, prev: AgentState | undefined): LogEntry | null {
+  const changed = !prev || prev.activity !== ev.activity || (!!ev.detail && prev.detail !== ev.detail);
+  if (!changed) return null;
+  return {
+    ts: ev.ts || Date.now(),
+    agentId: ev.agentId,
+    agentKind: ev.agentKind,
+    project: ev.project ?? prev?.project,
+    displayName: ev.displayName ?? prev?.displayName ?? defaultDisplayName(ev.agentKind, ev.agentId),
+    activity: ev.activity,
+    detail: ev.detail,
+  };
+}
+
+/** Apply an event, append a log line if it's an action, and broadcast both. */
+function record(server: Server, ev: AgentEvent): void {
+  const prev = world.peek(ev.agentId);
+  const entry = makeLog(ev, prev);
+  const changed = world.apply(ev);
+  if (entry) {
+    world.pushLog(entry);
+    server.publish(WORLD_TOPIC, JSON.stringify({ type: "log", entries: [entry] }));
+  }
+  if (changed) broadcast(server);
 }
 
 const server = Bun.serve({
@@ -51,7 +78,7 @@ const server = Bun.serve({
           return Response.json({ ok: false, error: "invalid event" }, { status: 400, headers: CORS });
         }
         if (!body.ts) body.ts = Date.now();
-        if (world.apply(body)) broadcast(server);
+        record(server, body);
         return Response.json({ ok: true }, { headers: CORS });
       } catch (e) {
         return Response.json({ ok: false, error: String(e) }, { status: 400, headers: CORS });
@@ -62,7 +89,7 @@ const server = Bun.serve({
       // Fire-and-forget: always answer 200 so a live Claude session is never blocked.
       try {
         const event = normalizeClaudeHook(await req.json());
-        if (event && world.apply(event)) broadcast(server);
+        if (event) record(server, event);
       } catch {
         // swallow malformed payloads
       }
@@ -94,6 +121,7 @@ const server = Bun.serve({
     open(ws: ServerWebSocket) {
       ws.subscribe(WORLD_TOPIC);
       ws.send(JSON.stringify(world.snapshot()));
+      ws.send(JSON.stringify({ type: "log", entries: world.recentLog() }));
     },
     close(ws: ServerWebSocket) {
       ws.unsubscribe(WORLD_TOPIC);

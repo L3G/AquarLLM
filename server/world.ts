@@ -6,13 +6,33 @@
 import {
   type AgentEvent,
   type AgentState,
+  type LogEntry,
   type WorldSnapshot,
   ACTIVITY_TO_DISTRICT,
   defaultDisplayName,
 } from "@aquarllm/shared";
 
+const LOG_CAP = 400;
+
 export class World {
   private agents = new Map<string, AgentState>();
+  private logBuf: LogEntry[] = [];
+
+  /** Current state of an agent, or undefined. */
+  peek(agentId: string): AgentState | undefined {
+    return this.agents.get(agentId);
+  }
+
+  /** Append a line to the activity feed (ring-buffered). */
+  pushLog(entry: LogEntry): void {
+    this.logBuf.push(entry);
+    if (this.logBuf.length > LOG_CAP) this.logBuf.splice(0, this.logBuf.length - LOG_CAP);
+  }
+
+  /** The most recent `n` activity-feed lines (oldest → newest). */
+  recentLog(n = 150): LogEntry[] {
+    return this.logBuf.slice(-n);
+  }
 
   /** Apply an event. Returns true if state changed (worth broadcasting). */
   apply(event: AgentEvent): boolean {

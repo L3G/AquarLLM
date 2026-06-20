@@ -84,6 +84,17 @@ Bugfix during port: clamp frame `dt` to ≥0 (`Math.max(0, …)`) — a negative
 `life` easing negative so nothing drew. `client/src/{main.ts,index.html}` rewired to the
 canvas; old PixiJS modules (`iso/map/character/pathfind/ui`) deleted.
 
+## v2.1 — activity feed + legend
+
+Hermes keeps a ring-buffered **activity log** (`world.ts` logBuf; `record()` in `index.ts`
+appends a `LogEntry` on each meaningful action — activity or detail change — and pushes a
+`{type:"log"}` WS message; full history is sent on connect). Agora shows it in a left
+**ACTIVITY** panel (`client/src/activitylog.ts`) — timestamped, faction-dotted, colour-coded
+lines (real file/command in `detail`) — with a **legend** footer mapping each activity to
+its colour + workspace and each agent kind to its colour. Toggle with the header button or
+**L**; the city reserves a left gutter (`city.setLeftGutter`) so it re-centres between the
+feed and the right HUD. New `LogEntry`/`LogMessage` types in `shared/logos.ts`.
+
 ## Status: working v2 ✅
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`

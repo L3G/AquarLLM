@@ -1,6 +1,7 @@
-/** Agora — boots the Living City canvas renderer and feeds it the live Hermes data. */
+/** Agora — boots the Living City, feeds it the live Hermes data + activity feed. */
 import type { WorldSnapshot } from "@aquarllm/shared";
 import { LivingCity } from "./city.ts";
+import { ActivityLog, renderLegend } from "./activitylog.ts";
 import { connect } from "./net.ts";
 
 const HERMES_WS =
@@ -10,7 +11,32 @@ const canvas = document.getElementById("town") as HTMLCanvasElement;
 const city = new LivingCity(canvas);
 city.start();
 
-connect(HERMES_WS, (snap: WorldSnapshot) => city.syncAgents(snap.agents));
+// Activity feed + legend (left panel)
+const log = new ActivityLog(document.getElementById("lg-list")!);
+renderLegend(document.getElementById("lg-acts")!, document.getElementById("lg-factions")!);
+
+connect(HERMES_WS, {
+  snapshot: (snap: WorldSnapshot) => city.syncAgents(snap.agents),
+  log: (entries) => log.add(entries),
+});
+
+// Show/hide the left panel; reserve gutter so the city re-centres between the panels.
+const panel = document.getElementById("log")!;
+const showBtn = document.getElementById("lg-show")!;
+const GUTTER = 314;
+let logOpen = true;
+function setLog(open: boolean): void {
+  logOpen = open;
+  panel.hidden = !open;
+  showBtn.hidden = open;
+  city.setLeftGutter(open ? GUTTER : 0);
+}
+document.getElementById("lg-hide")!.addEventListener("click", () => setLog(false));
+showBtn.addEventListener("click", () => setLog(true));
+window.addEventListener("keydown", (e) => {
+  if ((e.key === "l" || e.key === "L") && !e.metaKey && !e.ctrlKey) setLog(!logOpen);
+});
+setLog(true);
 
 // World switcher
 const buttons = [...document.querySelectorAll<HTMLButtonElement>("[data-world]")];

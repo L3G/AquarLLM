@@ -1,7 +1,12 @@
 /** WebSocket client to Hermes with auto-reconnect. */
-import type { WorldSnapshot } from "@aquarllm/shared";
+import type { LogEntry, WorldSnapshot } from "@aquarllm/shared";
 
-export function connect(url: string, onSnapshot: (snap: WorldSnapshot) => void): void {
+interface Handlers {
+  snapshot: (snap: WorldSnapshot) => void;
+  log?: (entries: LogEntry[]) => void;
+}
+
+export function connect(url: string, handlers: Handlers): void {
   let retry = 500;
 
   const open = (): void => {
@@ -14,7 +19,8 @@ export function connect(url: string, onSnapshot: (snap: WorldSnapshot) => void):
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data as string);
-        if (msg?.type === "snapshot") onSnapshot(msg as WorldSnapshot);
+        if (msg?.type === "snapshot") handlers.snapshot(msg as WorldSnapshot);
+        else if (msg?.type === "log") handlers.log?.((msg as { entries: LogEntry[] }).entries);
       } catch {
         // ignore non-JSON frames
       }

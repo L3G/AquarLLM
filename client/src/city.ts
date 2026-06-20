@@ -33,6 +33,7 @@ export class LivingCity {
     this.cam = { x: 0, y: 0, z: 0.85 };
     this._cache = {};
     this.userControlled = false;
+    this.leftGutter = 0; // px reserved on the left for the activity panel
 
     this.factions = { claude: "#d97757", codex: "#10a37f", grok: "#9aa0a6", custom: "#9b7cf0" };
     this.factionKeys = ["claude", "codex", "grok", "custom"];
@@ -196,7 +197,7 @@ export class LivingCity {
   project(w) { return { x: this._vcx + (w.x - this.cam.x) * this.cam.z, y: this._vcy + (w.y - this.cam.y) * this.cam.z }; }
   updateCamera(dt) { const live = this.projects.filter(p => p.life > 0.05); if (!live.length) return; let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
     for (const p of live) { const w = this.worldPos(p.cell); minx = Math.min(minx, w.x); maxx = Math.max(maxx, w.x); miny = Math.min(miny, w.y); maxy = Math.max(maxy, w.y); }
-    const pad = 150; const bw = (maxx - minx) + pad * 2, bh = (maxy - miny) + pad * 2; const availW = this._W - 250, availH = this._H - 30;
+    const pad = 150; const bw = (maxx - minx) + pad * 2, bh = (maxy - miny) + pad * 2; const availW = this._W - 250 - this.leftGutter, availH = this._H - 30;
     let tz = Math.min(availW / bw, availH / bh); tz = Math.max(0.5, Math.min(1.05, tz)); const tx = (minx + maxx) / 2, ty = (miny + maxy) / 2; const k = 1 - Math.pow(0.0002, dt);
     this.cam.x += (tx - this.cam.x) * k; this.cam.y += (ty - this.cam.y) * k; this.cam.z += (tz - this.cam.z) * k; }
 
@@ -361,7 +362,8 @@ export class LivingCity {
 
   /* ---------- main render ---------- */
   resize() { const cv = this.canvas; if (!cv) return; const r = cv.getBoundingClientRect(); const dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); this._townW = r.width; this._townH = r.height; this._dpr = dpr; this.useTownViewport(); }
-  useTownViewport() { this._W = this._townW; this._H = this._townH; this._vcx = (this._townW - 250) / 2; this._vcy = this._townH / 2; }
+  useTownViewport() { this._W = this._townW; this._H = this._townH; this._vcx = this.leftGutter + (this._townW - this.leftGutter - 250) / 2; this._vcy = this._townH / 2; }
+  setLeftGutter(px) { this.leftGutter = px || 0; }
   drawTown(t) { const cv = this.canvas; if (!cv) return; this.useTownViewport(); const ctx = cv.getContext("2d"); ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0); ctx.imageSmoothingEnabled = false;
     this.drawBackground(ctx); const live = this.projects.filter(p => p.life > 0.02); const { land } = this.computeLand(live);
     this.drawGround(ctx, land);

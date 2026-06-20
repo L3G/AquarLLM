@@ -139,8 +139,25 @@ export interface WorldSnapshot {
   agents: AgentState[];
 }
 
+/** One line in the activity feed — a discrete thing an agent did. */
+export interface LogEntry {
+  ts: number;
+  agentId: string;
+  agentKind: AgentKind;
+  project?: string;
+  displayName: string;
+  activity: Activity;
+  detail?: string;
+}
+
+/** A batch of activity-feed lines (history on connect, or a single live event). */
+export interface LogMessage {
+  type: "log";
+  entries: LogEntry[];
+}
+
 /** Discriminated union of everything Hermes sends over the WebSocket. */
-export type ServerMessage = WorldSnapshot;
+export type ServerMessage = WorldSnapshot | LogMessage;
 
 /** Build a friendly default display name from kind + id. */
 export function defaultDisplayName(kind: AgentKind, agentId: string): string {
