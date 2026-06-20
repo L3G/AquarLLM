@@ -53,8 +53,12 @@ possible follow-up.
 
 `adapters/presence/hypnos.ts` (run: `bun run presence`) makes **every open instance
 appear with no interaction**: it lists running `claude` processes, gets each one's cwd
-via `lsof`, and recovers its `session_id` from the newest transcript in
-`~/.claude/projects/<sanitised-cwd>/`. It heartbeats Hermes' new `/ingest/presence`
+via `lsof`, and recovers session_ids from the project dir's transcripts. Multiple
+instances can share a folder, so per folder it presences the **N newest transcripts**
+where N = live *terminal* `claude` processes there (VS Code native-binary helpers
+collapse to one session) — so e.g. 5 instances open on one repo each get an avatar.
+Agents jitter within their plot so co-located sleepers don't stack. It heartbeats
+Hermes' new `/ingest/presence`
 endpoint (`world.presence`), which creates a *sleeping* avatar for unknown sessions and
 keeps known ones alive **without overriding** their hook-driven activity. Keyed on the
 real `session_id`, the sleeper and the live (hook) avatar are the same character — no

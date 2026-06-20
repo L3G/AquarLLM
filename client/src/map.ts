@@ -108,12 +108,16 @@ export class Town {
     }
   }
 
-  /** Target tile for an agent: its project plot, offset by activity. */
+  /** Target tile for an agent: its project plot, offset by activity + a stable jitter
+   *  so several agents in the same state (e.g. a folder full of sleepers) don't stack. */
   target(agent: AgentState): Tile {
     const p = this.plots.get(agent.project || "·");
     const c = p ? p.center : { col: CENTER, row: CENTER };
     const off = ACT_OFFSET[agent.activity] ?? { col: 0, row: 0 };
-    return { col: c.col + off.col, row: c.row + off.row };
+    const h = hashHue(agent.agentId);
+    const jx = ((h % 9) / 8 - 0.5) * 2.6;
+    const jy = ((((h / 9) | 0) % 9) / 8 - 0.5) * 2.6;
+    return { col: c.col + off.col + jx, row: c.row + off.row + jy };
   }
 
   /** Fade plots in/out; remove ones whose grace period elapsed. */
