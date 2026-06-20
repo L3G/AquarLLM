@@ -11,7 +11,7 @@ grid to task-districts based on what it's doing. Full design:
 |---|---|---|
 | **Logos** | `shared/` | canonical `AgentEvent` schema + activity→district maps + WS message types |
 | **Hermes** | `server/` | Bun HTTP ingest + world reducer + WebSocket broadcast |
-| **Agora** | `client/` | Vite + PixiJS isometric renderer (grid, characters, pathfinding) |
+| **Agora** | `client/` | Vite + canvas "Living City" renderer (`city.ts`); 5 worlds, citizens, HUD |
 | **Eidolon** | `sim/` | simulator posting phantom agent events |
 | **Iris** | `adapters/claude-code/` | Claude Code hook config + generic ingest contract |
 
@@ -65,7 +65,26 @@ real `session_id`, the sleeper and the live (hook) avatar are the same character
 duplicates; when the process exits, the avatar is removed. macOS-only (`ps`/`lsof`),
 read-only. Camera now snaps out to always frame the whole town.
 
-## Status: working v1 ✅
+## v2 — The Living City (Claude Design)
+
+Agora's renderer was **replaced** with the Claude Design "Living City" — a high-fidelity
+procedural pixel-art isometric city (kept as raw 2D canvas per the design handoff, not
+PixiJS; PixiJS + easystar deps removed). The engine lives in `client/src/city.ts`
+(`LivingCity` class, ported verbatim from the design's `Component`), with the auto-sim
+swapped for the real feed via `syncAgents()`: each folder → a colour-coded **block** that
+grows/fades with `life`, each agent → a pixel **citizen** that walks to an activity
+workspace (desk/terminal/bookshelf/map-table/whiteboard/help-desk/bed), talks (real
+file/command in the bubble), and sleeps in a bed when idle. Connected land + streets,
+per-world roofs/signatures, an on-canvas HUD, and 5 re-skinnable worlds (Harbor / Cyber /
+Orbital / Isles / Silicon — switch via the top-left buttons). Camera auto-fits; trackpad
+pan/pinch + `+/-`/`F` carried over. Identity is stable (block by folder, citizen by
+agentId) so walk/animation state persists across snapshots.
+
+Bugfix during port: clamp frame `dt` to ≥0 (`Math.max(0, …)`) — a negative dt drove the
+`life` easing negative so nothing drew. `client/src/{main.ts,index.html}` rewired to the
+canvas; old PixiJS modules (`iso/map/character/pathfind/ui`) deleted.
+
+## Status: working v2 ✅
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`
 (+ `bun run sim` for demo phantoms).

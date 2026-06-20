@@ -4,9 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@aquarllm/shared": "workspace:*",
-    "easystarjs": "^0.4.4",
-    "pixi.js": "^8.6.0"
+    "@aquarllm/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
