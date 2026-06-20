@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AquarLLM · Agora</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --panel: rgba(20, 23, 30, 0.86);
+        --line: rgba(255, 255, 255, 0.08);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #12141a; }
+      body {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #e8eef5;
+      }
+      #app { position: fixed; inset: 0; }
+      #app canvas { display: block; }
+
+      header {
+        position: fixed; top: 12px; left: 14px; z-index: 10;
+        display: flex; align-items: baseline; gap: 10px;
+        pointer-events: none;
+      }
+      header h1 { margin: 0; font-size: 16px; letter-spacing: 0.5px; }
+      header .sub { font-size: 11px; color: #8b95a3; }
+      #status { font-size: 11px; }
+      #status.ok { color: #4ade80; }
+      #status.bad { color: #fbbf24; }
+
+      #legend {
+        position: fixed; top: 12px; right: 12px; z-index: 10;
+        width: 270px; max-height: calc(100vh - 24px); overflow: auto;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+        padding: 10px 12px; backdrop-filter: blur(6px);
+        font-size: 11px;
+      }
+      .legend-title { font-weight: 700; margin-bottom: 8px; color: #cfd8e3; }
+      #legend .row {
+        display: grid;
+        grid-template-columns: 10px 1fr auto;
+        grid-template-areas: "dot name act" "dot detail detail";
+        column-gap: 7px; row-gap: 1px;
+        padding: 4px 0; border-top: 1px solid var(--line);
+      }
+      #legend .row.sub { padding-left: 12px; opacity: 0.8; }
+      #legend .dot { grid-area: dot; width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; }
+      #legend .name { grid-area: name; font-weight: 600; }
+      #legend .act { grid-area: act; color: #9aa6b4; }
+      #legend .detail { grid-area: detail; color: #7d8794; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      #hint {
+        position: fixed; bottom: 10px; left: 14px; z-index: 10;
+        font-size: 11px; color: #6b7480; pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <header>
+      <h1>AquarLLM</h1>
+      <span class="sub">Agora</span>
+      <span id="status" class="bad">○ connecting…</span>
+    </header>
+    <aside id="legend"></aside>
+    <div id="hint">drag to pan · scroll to zoom · F to refit</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
