@@ -52,17 +52,41 @@ app.stage.on("pointermove", (e) => {
   lastX = e.global.x;
   lastY = e.global.y;
 });
-window.addEventListener(
+// Zoom toward a screen point, keeping the world point under it fixed.
+function zoomAt(sx: number, sy: number, factor: number): void {
+  const prev = world.scale.x;
+  const next = Math.min(3, Math.max(0.2, prev * factor));
+  world.x = sx - ((sx - world.x) / prev) * next;
+  world.y = sy - ((sy - world.y) / prev) * next;
+  world.scale.set(next);
+}
+
+app.canvas.addEventListener(
   "wheel",
   (e) => {
+    e.preventDefault();
     userControlled = true;
-    const next = Math.min(3, Math.max(0.3, world.scale.x * Math.exp(-e.deltaY * 0.001)));
-    world.scale.set(next);
+    if (e.ctrlKey) {
+      // pinch-to-zoom (trackpad) or ctrl+wheel (mouse), centred on the cursor
+      const rect = app.canvas.getBoundingClientRect();
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.01));
+    } else {
+      // two-finger scroll = pan
+      world.x -= e.deltaX;
+      world.y -= e.deltaY;
+    }
   },
-  { passive: true },
+  { passive: false },
 );
 window.addEventListener("keydown", (e) => {
-  if (e.key === "f" || e.key === "F") userControlled = false;
+  if (e.key === "f" || e.key === "F") {
+    userControlled = false;
+    return;
+  }
+  const factor = e.key === "+" || e.key === "=" ? 1.18 : e.key === "-" || e.key === "_" ? 0.85 : 0;
+  if (!factor) return;
+  userControlled = true;
+  zoomAt(app.screen.width / 2, app.screen.height / 2, factor);
 });
 
 function lerp(a: number, b: number, t: number): number {
