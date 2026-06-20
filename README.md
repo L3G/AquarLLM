@@ -1,26 +1,46 @@
-# AquarLLM 🐟
+# AquarLLM 🏛️
 
-> A living aquarium for AI agents.
+> A living **isometric pixel world** for AI agents.
 
-Every working agent — a Claude Code session, a Codex session, a Grok session, or a
-private LLM — gets its own **fish** in a shared tank. What each agent is actually
-doing right now drives its avatar: reading code, editing files, running commands,
-searching the web, spawning helpers, or idling all move the fish through themed
-zones and surface speech-bubbles of the current task.
+Every working agent — a Claude Code session, a subagent, a Codex session, a Grok
+session, or a private/local LLM — gets a **pixel-art character** in a shared
+isometric town. What each agent is actually doing right now drives its avatar: the
+character **walks across the tile grid** to a task-district — the **Library** for
+reading code, the **Workshop** for editing, the **Terminal** for shell commands, the
+**Gateway** for web search, the **Help Desk** when waiting on you, the **Stoa** when
+idle — with a speech-bubble showing the current file or command. Subagents appear as
+little companion characters.
 
 ## Status
 
-🌱 **Early planning.** The repository is being seeded; the detailed design is being
-refined before implementation begins. No application code yet.
+🌱 **In active development.** See [`progress.md`](./progress.md) for the current state.
 
-## Concept at a glance
+## How it works
 
-- **The Tank** — a 2D top-down aquarium rendered in the browser.
-- **Fish = agents** — coloured/themed by kind (Claude, Codex, Grok, private LLM).
-- **Activity → behaviour** — tool use steers each fish to a zone (reef for reading,
-  shipwreck for editing, vent for shell commands, surface for web/wait) with a bubble
-  showing the file or command.
-- **Real feed** — Claude Code streams live activity via fire-and-forget hooks; other
-  agents post the same events to a generic ingest endpoint.
+```
+ Claude Code session ─(async http hook)─┐
+ Codex / Grok / local LLM ─(POST)────────┤→  Hermes (Bun server)  →ws→  Agora (browser)
+ Eidolon simulator ─(POST)───────────────┘   ingest + world state        isometric town
+```
 
-More to come.
+- **Hermes** (`server/`) — Bun HTTP + WebSocket hub. Ingests events, owns world state,
+  broadcasts snapshots.
+- **Agora** (`client/`) — Vite + PixiJS isometric renderer. Characters pathfind across
+  the grid to districts based on activity.
+- **Iris** (`adapters/claude-code/`) — Claude Code hook config that streams a real
+  session's activity to Hermes; also documents the generic ingest contract for other agents.
+- **Logos** (`shared/`) — the canonical event schema shared by every component.
+- **Eidolon** (`sim/`) — a simulator of phantom agents so the town is lively before any
+  real agent is wired.
+
+## Quick start
+
+```bash
+bun install
+bun run server     # Hermes on :8787 (HTTP ingest + WS)
+bun run client     # Agora dev server (Vite)
+bun run sim        # Eidolon — phantom agents to watch
+```
+
+Then open the Vite URL and watch the town come alive. To stream a real Claude Code
+session, follow `adapters/claude-code/README.md`.

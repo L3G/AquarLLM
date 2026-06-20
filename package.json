@@ -1,0 +1,18 @@
+{
+  "name": "aquarllm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AquarLLM — an isometric pixel world visualizing live AI agents",
+  "type": "module",
+  "workspaces": ["shared", "server", "client", "sim"],
+  "scripts": {
+    "server": "cd server && bun run dev",
+    "sim": "cd sim && bun run dev",
+    "client": "cd client && bun run dev",
+    "presence": "bun run adapters/presence/hypnos.ts",
+    "build:client": "cd client && bun run build"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

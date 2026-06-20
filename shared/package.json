@@ -1,0 +1,12 @@
+{
+  "name": "@aquarllm/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "logos.ts",
+  "module": "logos.ts",
+  "types": "logos.ts",
+  "exports": {
+    ".": "./logos.ts"
+  }
+}
