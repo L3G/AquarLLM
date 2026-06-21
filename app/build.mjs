@@ -14,13 +14,14 @@ function encodePNG(w, h, rgba) {
   for (let y = 0; y < h; y++) { raw[y * (w * 4 + 1)] = 0; rgba.copy(raw, y * (w * 4 + 1) + 1, y * w * 4, (y + 1) * w * 4); }
   return Buffer.concat([sig, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw, { level: 9 })), chunk("IEND", Buffer.alloc(0))]);
 }
-// An iso "city" mark: a 2:1 diamond with a smaller diamond roof notch.
-function icon(size, rgb, template) {
+// An iso "city" mark: a 2:1 diamond with a smaller diamond roof notch. wf/hf are the
+// diamond's half-extents as a fraction of the canvas, so smaller values = more padding.
+function icon(size, rgb, template, wf = 0.46, hf = 0.30) {
   const rgba = Buffer.alloc(size * size * 4); const cx = size / 2, cy = size / 2;
+  const rw = wf * 0.66, rh = hf * 0.55, roy = hf * 0.5; // roof notch
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const nx = Math.abs((x - cx) / (size * 0.46)), ny = Math.abs((y - cy) / (size * 0.30));
-    const inDiamond = nx + ny <= 1;
-    const roof = Math.abs((x - cx) / (size * 0.30)) + Math.abs((y - (cy - size * 0.14)) / (size * 0.16)) <= 1;
+    const inDiamond = Math.abs((x - cx) / (size * wf)) + Math.abs((y - cy) / (size * hf)) <= 1;
+    const roof = Math.abs((x - cx) / (size * rw)) + Math.abs((y - (cy - size * roy)) / (size * rh)) <= 1;
     const on = inDiamond || roof;
     const i = (y * size + x) * 4;
     if (on) { const lit = roof ? 1 : 0.82; rgba[i] = template ? 0 : Math.round(rgb[0] * lit); rgba[i + 1] = template ? 0 : Math.round(rgb[1] * lit); rgba[i + 2] = template ? 0 : Math.round(rgb[2] * lit); rgba[i + 3] = 255; }
@@ -29,8 +30,10 @@ function icon(size, rgb, template) {
 }
 
 mkdirSync("assets", { recursive: true });
-writeFileSync("assets/icon.png", icon(512, [217, 119, 87], false));
-writeFileSync("assets/tray.png", icon(32, [0, 0, 0], true)); // macOS template (black + alpha)
+writeFileSync("assets/icon.png", icon(512, [217, 119, 87], false, 0.46, 0.30));
+// macOS menu-bar template (black + alpha): small 16pt glyph with padding, crisp @2x.
+writeFileSync("assets/tray.png", icon(16, [0, 0, 0], true, 0.42, 0.30));
+writeFileSync("assets/tray@2x.png", icon(32, [0, 0, 0], true, 0.42, 0.30));
 
 const common = { bundle: true, platform: "node", format: "cjs", target: "node18", logLevel: "info" };
 await esbuild.build({ ...common, entryPoints: ["src/main.ts"], outfile: "dist/main.cjs", external: ["electron"] });
