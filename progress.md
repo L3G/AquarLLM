@@ -95,6 +95,20 @@ its colour + workspace and each agent kind to its colour. Toggle with the header
 **L**; the city reserves a left gutter (`city.setLeftGutter`) so it re-centres between the
 feed and the right HUD. New `LogEntry`/`LogMessage` types in `shared/logos.ts`.
 
+## v2.2 — Living City design refresh (Claude Design v2 handoff)
+
+Re-ported `client/src/city.ts` to the updated design: buildings **go dormant** (dimmed,
+never deleted) when a folder's instances all close, and reappear when work returns;
+persistent **git-yard / build-yard** civic blocks downtown with **street-routed
+commuting** (`gridPath` + front-corner waypoints, drawn in a separate world-space pass);
+**uniquely-dressed citizens** (random head/hair/skin/shirt/hat — faction is only the foot
+dot); **smaller 0.66 footprints** so paved lanes show, occupied cells paved + park/beach
+cells, **beach + foam ring** on island worlds; per-room **material floor + rug + corner
+prop** (`decorKind`), **doorways** cut into walls, project-tinted roofs (no windows/
+chimneys). Real-data wiring keeps stable per-agent cosmetics (by agentId), maps idle
+folders to `goDormant()` (kept, not removed), and lets the ambient commute yield to the
+real activity when it returns. dt clamp + left-gutter + trackpad controls retained.
+
 ## Status: working v2 ✅
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`
