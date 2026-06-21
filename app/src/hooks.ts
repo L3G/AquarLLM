@@ -3,7 +3,7 @@
  * curl) pointing at the app's local server, merged non-destructively into the user's
  * global settings. Tagged so we can detect/remove our own hooks cleanly.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 
@@ -62,4 +62,31 @@ export function uninstallHooks(): void {
   }
   if (!Object.keys(s.hooks).length) delete s.hooks;
   writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + "\n");
+}
+
+/* ---------- Grok CLI hooks ---------- */
+// Grok reads global, always-trusted hook files from ~/.grok/hooks/*.json (same schema
+// as Claude, with type:"http" support). We own a single file so install = overwrite.
+const GROK_DIR = join(homedir(), ".grok");
+const GROK_HOOKS = join(GROK_DIR, "hooks", "aquarllm.json");
+
+export function grokAvailable(): boolean {
+  return existsSync(GROK_DIR);
+}
+
+export function grokHooksStatus(): { installed: boolean; hooksPath: string } {
+  return { installed: existsSync(GROK_HOOKS), hooksPath: GROK_HOOKS };
+}
+
+export function installGrokHooks(port: number): void {
+  if (!grokAvailable()) return;
+  mkdirSync(dirname(GROK_HOOKS), { recursive: true });
+  const http = () => ({ type: "http", url: `http://localhost:${port}/ingest/grok-hook`, timeout: 3 });
+  const hooks: Record<string, unknown> = {};
+  for (const ev of [...EVENTS_ANY, ...EVENTS_TOOL]) hooks[ev] = [{ hooks: [http()] }]; // empty matcher = all tools
+  writeFileSync(GROK_HOOKS, JSON.stringify({ hooks }, null, 2) + "\n");
+}
+
+export function uninstallGrokHooks(): void {
+  try { if (existsSync(GROK_HOOKS)) rmSync(GROK_HOOKS); } catch { /* ignore */ }
 }

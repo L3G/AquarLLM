@@ -5,6 +5,7 @@
  */
 import {
   type AgentEvent,
+  type AgentKind,
   type AgentState,
   type LogEntry,
   type WorldSnapshot,
@@ -68,7 +69,13 @@ export class World {
    * avatar for one that hasn't emitted any hook yet. Never overrides an actively-working
    * session. Returns true only when a brand-new avatar is created (worth broadcasting).
    */
-  presence(agentId: string, project: string | undefined, displayName: string | undefined, now: number): boolean {
+  presence(
+    agentId: string,
+    project: string | undefined,
+    displayName: string | undefined,
+    now: number,
+    kind: AgentKind = "claude",
+  ): boolean {
     const prev = this.agents.get(agentId);
     if (prev) {
       prev.lastUpdate = now; // keep the open session alive; let hooks drive its activity
@@ -77,8 +84,8 @@ export class World {
     }
     this.agents.set(agentId, {
       agentId,
-      agentKind: "claude",
-      displayName: displayName ?? project ?? defaultDisplayName("claude", agentId),
+      agentKind: kind,
+      displayName: displayName ?? project ?? defaultDisplayName(kind, agentId),
       activity: "idle",
       district: ACTIVITY_TO_DISTRICT.idle,
       project,

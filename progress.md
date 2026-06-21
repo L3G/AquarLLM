@@ -130,6 +130,23 @@ dev Electron run and the packaged `AquarLLM.app` both boot, serve `:8787`, detec
 instances, and render. Build artifacts (`app/release/`, `app/dist/`, `app/assets/`) are
 gitignored.
 
+## v3.1 — Grok support
+
+The Grok CLI has a Claude-compatible hooks system with **global, always-trusted** files
+(`~/.grok/hooks/*.json`) and `type:"http"` support, plus a `~/.grok/active_sessions.json`
+presence file. So:
+- **Grok hooks** (`server/normalize-grok.ts` + `/ingest/grok-hook` on both servers): grok
+  POSTs its event envelope (`hookEventName`/`sessionId`/`cwd`/`toolName`/`toolInput`),
+  normalized to canonical events (grok tool names → activities). The app installs
+  `~/.grok/hooks/aquarllm.json` automatically when `~/.grok` exists (tray toggle).
+- **Grok presence** (Hypnos): reads `~/.grok/active_sessions.json` so open-but-idle grok
+  sessions appear asleep — works on every platform (just a file read). `world.presence`
+  now takes an `AgentKind`.
+- Dev reference: `adapters/grok/` (hooks.json + README).
+
+Verified: grok-hook endpoint maps a session to `LiberLM → running: cargo test`; presence
+shows the open `peitho` grok session idle.
+
 ## Status: working v3 ✅ — desktop app
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`

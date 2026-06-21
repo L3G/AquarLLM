@@ -9,6 +9,7 @@ import type { Server, ServerWebSocket } from "bun";
 import { type AgentEvent, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
 import { World } from "./world.ts";
 import { normalizeClaudeHook } from "./normalize.ts";
+import { normalizeGrokHook } from "./normalize-grok.ts";
 
 const PORT = Number(process.env.PORT ?? 8787);
 // Keep open instances around even while idle for hours; SessionEnd removes them on
@@ -89,6 +90,16 @@ const server = Bun.serve({
       // Fire-and-forget: always answer 200 so a live Claude session is never blocked.
       try {
         const event = normalizeClaudeHook(await req.json());
+        if (event) record(server, event);
+      } catch {
+        // swallow malformed payloads
+      }
+      return new Response("ok", { headers: CORS });
+    }
+
+    if (req.method === "POST" && url.pathname === "/ingest/grok-hook") {
+      try {
+        const event = normalizeGrokHook(await req.json());
         if (event) record(server, event);
       } catch {
         // swallow malformed payloads

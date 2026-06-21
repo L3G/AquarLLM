@@ -11,7 +11,8 @@ startServer({ port: PORT, clientDir }).then((server) => {
   console.log(`standalone server on :${PORT} serving ${clientDir}`);
   const h = startHypnos({
     projectsDir: join(homedir(), ".claude", "projects"),
-    report: (id, proj) => { if (server.world.presence(id, proj, proj, Date.now())) server.broadcast(); },
+    grokSessionsFile: join(homedir(), ".grok", "active_sessions.json"),
+    report: (id, proj, kind) => { if (server.world.presence(id, proj, proj, Date.now(), kind)) server.broadcast(); },
     leave: (id) => { if (server.world.apply({ agentKind: "claude", agentId: id, activity: "left", ts: Date.now() })) server.broadcast(); },
   });
   console.log("hypnos supported:", h.supported);

@@ -8,7 +8,10 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { startServer, type ServerHandle } from "./server.ts";
 import { startHypnos, type HypnosHandle } from "./hypnos.ts";
-import { installHooks, uninstallHooks, hooksStatus } from "./hooks.ts";
+import {
+  installHooks, uninstallHooks, hooksStatus,
+  grokAvailable, grokHooksStatus, installGrokHooks, uninstallGrokHooks,
+} from "./hooks.ts";
 
 const PORT = 8787;
 let server: ServerHandle | null = null;
@@ -32,10 +35,12 @@ async function init(): Promise<void> {
   server = await startServer({ port: PORT, clientDir: clientDir() });
   hypnos = startHypnos({
     projectsDir: join(homedir(), ".claude", "projects"),
-    report: (id, proj) => { if (server!.world.presence(id, proj, proj, Date.now())) server!.broadcast(); },
+    grokSessionsFile: join(homedir(), ".grok", "active_sessions.json"),
+    report: (id, proj, kind) => { if (server!.world.presence(id, proj, proj, Date.now(), kind)) server!.broadcast(); },
     leave: (id) => { if (server!.world.apply({ agentKind: "claude", agentId: id, activity: "left", ts: Date.now() })) server!.broadcast(); },
   });
   try { if (!hooksStatus(PORT).installed) installHooks(PORT); } catch (e) { console.error("hook install failed:", e); }
+  try { if (grokAvailable() && !grokHooksStatus().installed) installGrokHooks(PORT); } catch (e) { console.error("grok hook install failed:", e); }
   createTray();
   showWindow();
   setInterval(updateTray, 4000);
@@ -59,21 +64,28 @@ function createTray(): void {
 function updateTray(): void {
   if (!tray) return;
   const n = server?.world.size ?? 0;
-  const installed = hooksStatus(PORT).installed;
+  const claudeOn = hooksStatus(PORT).installed;
+  const grokOn = grokHooksStatus().installed;
   const hyp = hypnos?.supported ? "auto-detect on" : "hooks-only (this OS)";
-  tray.setContextMenu(Menu.buildFromTemplate([
+  const items: Electron.MenuItemConstructorOptions[] = [
     { label: `AquarLLM · ${n} in the city`, enabled: false },
     { label: hyp, enabled: false },
     { type: "separator" },
     { label: "Open city window", click: () => showWindow() },
     { label: "Open in browser", click: () => shell.openExternal(`http://localhost:${PORT}/`) },
     {
-      label: installed ? "Claude hooks: installed ✓ (click to remove)" : "Install Claude hooks",
-      click: () => { try { installed ? uninstallHooks() : installHooks(PORT); } catch (e) { console.error(e); } updateTray(); },
+      label: claudeOn ? "Claude hooks: installed ✓ (click to remove)" : "Install Claude hooks",
+      click: () => { try { claudeOn ? uninstallHooks() : installHooks(PORT); } catch (e) { console.error(e); } updateTray(); },
     },
-    { type: "separator" },
-    { label: "Quit AquarLLM", click: () => quit() },
-  ]));
+  ];
+  if (grokAvailable()) {
+    items.push({
+      label: grokOn ? "Grok hooks: installed ✓ (click to remove)" : "Install Grok hooks",
+      click: () => { try { grokOn ? uninstallGrokHooks() : installGrokHooks(PORT); } catch (e) { console.error(e); } updateTray(); },
+    });
+  }
+  items.push({ type: "separator" }, { label: "Quit AquarLLM", click: () => quit() });
+  tray.setContextMenu(Menu.buildFromTemplate(items));
   if (process.platform === "darwin") tray.setTitle(n ? ` ${n}` : "");
 }
 

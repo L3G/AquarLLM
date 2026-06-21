@@ -11,6 +11,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { type AgentEvent, type AgentState, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
 import { World } from "../../server/world.ts";
 import { normalizeClaudeHook } from "../../server/normalize.ts";
+import { normalizeGrokHook } from "../../server/normalize-grok.ts";
 
 const REAP_AFTER_MS = 6 * 60 * 60 * 1000;
 const MIME: Record<string, string> = {
@@ -95,6 +96,10 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
     }
     if (req.method === "POST" && path === "/ingest/claude-hook") {
       try { const ev = normalizeClaudeHook(JSON.parse(await readBody(req))); if (ev) record(ev); } catch { /* ignore */ }
+      res.writeHead(200, CORS).end("ok"); return;
+    }
+    if (req.method === "POST" && path === "/ingest/grok-hook") {
+      try { const ev = normalizeGrokHook(JSON.parse(await readBody(req))); if (ev) record(ev); } catch { /* ignore */ }
       res.writeHead(200, CORS).end("ok"); return;
     }
     if (req.method === "POST" && path === "/ingest/presence") {

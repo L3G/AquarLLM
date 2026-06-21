@@ -1,38 +1,41 @@
 /**
- * Hypnos (Node, cross-platform presence) — detects open Claude Code instances so they
- * appear asleep without interaction, reporting straight into the embedded world.
- *   macOS:   ps + lsof (cwd)
- *   Linux:   ps + /proc/<pid>/cwd
- *   Windows: unsupported — falls back to hooks-only presence (no-op here)
+ * Hypnos (Node, cross-platform presence) — detects open agent sessions so they appear
+ * asleep without interaction.
+ *   Claude:  macOS ps+lsof / Linux /proc/<pid>/cwd  → newest transcript per folder
+ *   Grok:    read ~/.grok/active_sessions.json (works on every platform)
+ *   Windows + Claude: unsupported (falls back to hook-driven presence)
  */
 import { execFile } from "node:child_process";
-import { readdirSync, statSync, readlinkSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, readlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import type { AgentKind } from "@aquarllm/shared";
 
 const pexec = promisify(execFile);
 
 export interface HypnosHandle { stop(): void; supported: boolean; }
 
 interface HypnosOpts {
-  projectsDir: string;
-  report: (agentId: string, project: string) => void;
+  projectsDir: string; // ~/.claude/projects
+  grokSessionsFile?: string; // ~/.grok/active_sessions.json
+  report: (agentId: string, project: string, kind: AgentKind) => void;
   leave: (agentId: string) => void;
   tickMs?: number;
 }
 
 const sanitize = (cwd: string) => cwd.replace(/\//g, "-");
-const base = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+const base = (p: string) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
 
 export function startHypnos(opts: HypnosOpts): HypnosHandle {
   const plat = process.platform;
-  if (plat !== "darwin" && plat !== "linux") return { stop() {}, supported: false };
+  const canClaude = plat === "darwin" || plat === "linux";
+  const canGrok = !!opts.grokSessionsFile;
+  if (!canClaude && !canGrok) return { stop() {}, supported: false };
 
   const tickMs = opts.tickMs ?? 12000;
   const MISS_GRACE = 2;
   const misses = new Map<string, number>();
 
-  /** pid → isTerminal (CLI vs editor helper). */
   async function claudeProcs(): Promise<Map<string, boolean>> {
     const map = new Map<string, boolean>();
     try {
@@ -74,22 +77,37 @@ export function startHypnos(opts: HypnosOpts): HypnosHandle {
     return files.sort((a, b) => b.m - a.m).slice(0, n).map((f) => f.id);
   }
 
+  function grokSessions(): Array<{ id: string; cwd: string }> {
+    if (!opts.grokSessionsFile || !existsSync(opts.grokSessionsFile)) return [];
+    try {
+      const arr = JSON.parse(readFileSync(opts.grokSessionsFile, "utf8"));
+      if (!Array.isArray(arr)) return [];
+      return arr.map((s: any) => ({ id: s.session_id ?? s.sessionId, cwd: s.cwd })).filter((s) => s.id && s.cwd);
+    } catch { return []; }
+  }
+
   async function tick(): Promise<void> {
-    const procs = await claudeProcs();
-    const cwds = await cwdByPid([...procs.keys()]);
-    const folders = new Map<string, { terminal: number }>();
-    for (const [pid, isTerm] of procs) {
-      const cwd = cwds.get(pid);
-      if (!cwd) continue;
-      const f = folders.get(cwd) ?? { terminal: 0 };
-      if (isTerm) f.terminal++;
-      folders.set(cwd, f);
-    }
     const present = new Set<string>();
-    for (const [cwd, f] of folders) {
-      const n = f.terminal > 0 ? f.terminal : 1;
-      for (const id of sessionsForCwd(cwd, n)) { present.add(id); misses.set(id, 0); opts.report(id, base(cwd)); }
+
+    if (canClaude) {
+      const procs = await claudeProcs();
+      const cwds = await cwdByPid([...procs.keys()]);
+      const folders = new Map<string, { terminal: number }>();
+      for (const [pid, isTerm] of procs) {
+        const cwd = cwds.get(pid);
+        if (!cwd) continue;
+        const f = folders.get(cwd) ?? { terminal: 0 };
+        if (isTerm) f.terminal++;
+        folders.set(cwd, f);
+      }
+      for (const [cwd, f] of folders) {
+        const n = f.terminal > 0 ? f.terminal : 1;
+        for (const id of sessionsForCwd(cwd, n)) { present.add(id); misses.set(id, 0); opts.report(id, base(cwd), "claude"); }
+      }
     }
+
+    for (const s of grokSessions()) { present.add(s.id); misses.set(s.id, 0); opts.report(s.id, base(s.cwd), "grok"); }
+
     for (const [id, miss] of misses) {
       if (present.has(id)) continue;
       if (miss + 1 >= MISS_GRACE) { opts.leave(id); misses.delete(id); }
