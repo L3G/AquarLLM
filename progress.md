@@ -109,7 +109,28 @@ chimneys). Real-data wiring keeps stable per-agent cosmetics (by agentId), maps 
 folders to `goDormant()` (kept, not removed), and lets the ambient commute yield to the
 real activity when it returns. dt clamp + left-gutter + trackpad controls retained.
 
-## Status: working v2 ✅
+## v3 — desktop app (Electron, cross-platform)
+
+`app/` packages everything into a menu-bar/tray Electron app so non-devs can run it.
+One **embedded Node server** (`app/src/server.ts`, a port of Hermes using `http` + `ws`,
+reusing `server/world.ts` + `normalize.ts`) serves the built city AND ingests events on
+`:8787`. **Hypnos** is re-ported to cross-platform Node (`app/src/hypnos.ts`: macOS
+`ps`/`lsof`, Linux `/proc/<pid>/cwd`, Windows → hooks-only). The **hooks installer**
+(`app/src/hooks.ts`) merges cross-platform `type:"http"` hooks into `~/.claude/
+settings.json` (recognises + replaces the older curl hooks; non-destructive, backed up).
+`app/src/main.ts` is the Electron main: single-instance, runs server+hypnos in-process,
+tray menu (live count / open window / hooks toggle / quit), window loads the city, hooks
+auto-installed on first run. `app/build.mjs` bundles main+standalone via esbuild and
+generates the tray/app PNG icons (hand-rolled PNG encoder, no image deps). electron-
+builder config builds mac/win/linux. The client's WS URL is now same-origin (works in
+both Vite dev and the app). Run: `bun run app`; package: `bun run app:dist`.
+
+Verified: embedded Node server serves the city + presence (headless screenshot); the
+dev Electron run and the packaged `AquarLLM.app` both boot, serve `:8787`, detect open
+instances, and render. Build artifacts (`app/release/`, `app/dist/`, `app/assets/`) are
+gitignored.
+
+## Status: working v3 ✅ — desktop app
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`
 (+ `bun run sim` for demo phantoms).

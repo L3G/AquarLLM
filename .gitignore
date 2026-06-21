@@ -9,6 +9,11 @@ build/
 out/
 *.tsbuildinfo
 
+# Electron app build artifacts
+release/
+*.app
+app/assets/
+
 # Bun
 bun.lockb
 

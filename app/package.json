@@ -1,0 +1,38 @@
+{
+  "name": "@aquarllm/app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AquarLLM — desktop app (Electron): your AI agents as a living city",
+  "author": "L3G",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "dependencies": {
+    "@aquarllm/shared": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0"
+  },
+  "scripts": {
+    "build:client": "cd ../client && bun run build",
+    "bundle": "node build.mjs",
+    "build": "bun run build:client && bun run bundle",
+    "standalone": "node dist/standalone.cjs",
+    "start": "bun run build && electron .",
+    "dist": "bun run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.l3g.aquarllm",
+    "productName": "AquarLLM",
+    "electronVersion": "33.4.11",
+    "npmRebuild": false,
+    "directories": { "output": "release", "buildResources": "assets" },
+    "files": ["dist/**/*", "assets/**/*"],
+    "extraResources": [{ "from": "../client/dist", "to": "client" }],
+    "mac": { "target": ["dmg", "zip"], "category": "public.app-category.developer-tools", "icon": "assets/icon.png" },
+    "win": { "target": ["nsis"], "icon": "assets/icon.png" },
+    "linux": { "target": ["AppImage"], "category": "Development", "icon": "assets/icon.png" }
+  }
+}

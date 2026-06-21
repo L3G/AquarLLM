@@ -4,8 +4,13 @@ import { LivingCity } from "./city.ts";
 import { ActivityLog, renderLegend } from "./activitylog.ts";
 import { connect } from "./net.ts";
 
+// Dev (Vite :5173) talks to Hermes on :8787; the packaged app serves the city from the
+// same origin as its server, so derive the WS URL from the page location there.
 const HERMES_WS =
-  (import.meta.env.VITE_HERMES_WS as string | undefined) ?? "ws://localhost:8787/ws";
+  (import.meta.env.VITE_HERMES_WS as string | undefined) ??
+  (location.port === "5173"
+    ? "ws://localhost:8787/ws"
+    : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 
 const canvas = document.getElementById("town") as HTMLCanvasElement;
 const city = new LivingCity(canvas);
