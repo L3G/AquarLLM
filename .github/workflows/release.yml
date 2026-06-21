@@ -1,0 +1,59 @@
+name: Build Windows + Linux
+
+# Builds the Windows (.exe) and Linux (.AppImage) desktop apps and attaches them to the
+# matching GitHub release. The macOS build is produced locally (Apple Silicon).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach builds to (e.g. v0.1.0)"
+        required: true
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: "--win"
+          - os: ubuntu-latest
+            target: "--linux"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build client + bundle app
+        working-directory: app
+        run: bun run build
+
+      - name: Package (${{ matrix.target }})
+        working-directory: app
+        run: bunx electron-builder ${{ matrix.target }} --publish never
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Attach artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          fail_on_unmatched_files: false
+          files: |
+            app/release/*.exe
+            app/release/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
