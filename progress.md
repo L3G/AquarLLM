@@ -147,6 +147,16 @@ presence file. So:
 Verified: grok-hook endpoint maps a session to `LiberLM → running: cargo test`; presence
 shows the open `peitho` grok session idle.
 
+## v3.2 — performance
+
+The v2 scene is draw-heavy and felt laggy in the app. Fixes (`client/src/city.ts` +
+`app/src/main.ts`): cap the render loop to **30fps** (ambient scene; halves cost),
+**cache `computeLand`** (beach/park structure) so it isn't rebuilt every frame, make the
+loop **crash-resilient** (schedule the next frame first; a caught error no longer stops
+the loop — that stop/watchdog-restart cycle read as stutter), and set Electron
+`backgroundThrottling: false` so the menu-bar window stays smooth when unfocused.
+Measured renderer ~7% CPU after.
+
 ## Status: working v3 ✅ — desktop app
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`

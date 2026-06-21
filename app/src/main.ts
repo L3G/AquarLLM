@@ -94,7 +94,7 @@ function showWindow(): void {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 800, minHeight: 560,
     backgroundColor: "#0c0d12", title: "AquarLLM — The Living City",
-    webPreferences: { contextIsolation: true },
+    webPreferences: { contextIsolation: true, backgroundThrottling: false },
   });
   win.loadURL(`http://localhost:${PORT}/`);
 }

@@ -477,8 +477,12 @@ export class LivingCity {
   useTownViewport() { this._W = this._townW; this._H = this._townH; this._vcx = this.leftGutter + (this._townW - this.leftGutter - 250) / 2; this._vcy = this._townH / 2; }
   setLeftGutter(px) { this.leftGutter = px || 0; }
   drawTown(t) { const cv = this.canvas; if (!cv) return; this.useTownViewport(); const ctx = cv.getContext("2d"); ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0); ctx.imageSmoothingEnabled = false;
-    this.drawBackground(ctx); const live = this.projects.filter(p => p.life > 0.02); const { land } = this.computeLand(live);
-    this.drawGround(ctx, land);
+    this.drawBackground(ctx); const live = this.projects.filter(p => p.life > 0.02);
+    // Land/beach structure only changes when the set of live cells changes — cache it
+    // (project refs stay live, so per-tile fade alpha is still fresh).
+    const sig = live.map(p => p.cell.cx + "," + p.cell.cy).sort().join("|");
+    if (sig !== this._landSig) { this._land = this.computeLand(live).land; this._landSig = sig; }
+    this.drawGround(ctx, this._land);
     const sorted = [...live].sort((a, b) => (a.cell.cx + a.cell.cy) - (b.cell.cx + b.cell.cy));
     const rl = []; for (const p of sorted) rl.push({ d: p.cell.cx + p.cell.cy, fn: () => this.drawParcel(ctx, p, t) });
     for (const p of this.projects) { if (p.civic || p.life <= 0.02) continue; for (const a of p.agents) { if (!a.commute) continue; const sc = this.project({ x: a.wx, y: a.wy }); rl.push({ d: a.wy / this.B + 0.45, fn: () => this.drawWalker(ctx, sc.x, sc.y, a, t) }); } }
@@ -489,11 +493,19 @@ export class LivingCity {
     this.resize(); this.rebuildBg();
     this.addCivic("git", { cx: 0, cy: 0 }); this.addCivic("bash", { cx: 1, cy: 0 });
     window.addEventListener("resize", () => this.resize());
-    let last = performance.now(); this._lastFrame = last;
-    const loop = (now) => { now = now || performance.now(); const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; this._lastFrame = now; const t = now / 1000;
-      try { this.useTownViewport(); this.update(dt, t); if (!this.userControlled) this.updateCamera(dt); this.drawTown(t); } catch (err) { console.error("city loop:", err && err.message, err && err.stack); return; }
-      if (document.hidden) { this._to = setTimeout(loop, 180); } else { this._raf = requestAnimationFrame(loop); } };
-    loop(performance.now());
-    this._watch = setInterval(() => { if (performance.now() - this._lastFrame > 350) loop(performance.now()); }, 300);
+    const frameMs = 1000 / 30; // ambient scene — 30fps is plenty and halves render cost
+    let last = performance.now();
+    const loop = (now) => {
+      this._raf = requestAnimationFrame(loop); // schedule first so one bad frame never stops the city
+      now = now || performance.now();
+      const elapsed = now - last;
+      if (elapsed < frameMs - 2) return; // frame-rate cap
+      last = now;
+      const dt = Math.max(0, Math.min(0.05, elapsed / 1000));
+      const t = now / 1000;
+      try { this.useTownViewport(); this.update(dt, t); if (!this.userControlled) this.updateCamera(dt); this.drawTown(t); }
+      catch (err) { console.error("city loop:", err && err.message); }
+    };
+    this._raf = requestAnimationFrame(loop);
   }
 }
