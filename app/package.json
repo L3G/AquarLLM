@@ -1,6 +1,6 @@
 {
   "name": "@aquarllm/app",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "AquarLLM — desktop app (Electron): your AI agents as a living city",
   "author": "L3G",

@@ -1,6 +1,6 @@
 {
   "name": "aquarllm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "AquarLLM — an isometric pixel world visualizing live AI agents",
   "type": "module",
