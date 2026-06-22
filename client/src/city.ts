@@ -105,7 +105,14 @@ export class LivingCity {
       chat: ["hello!", "how's it?", "hi there", "did you hear?", "g'day"],
       fish: ["any fish?", "patience…", "got one!", "just one more", "nibble?"],
       stroll: ["la la~", "…", "off we go", "hmm", "such a day"],
+      wish: ["make a wish", "i wish…", "one coin…", "✦", "fingers crossed"],
+      coffee: ["one coffee", "*sip*", "smells good", "another?", "mmm"],
+      tend: ["watering…", "such flowers", "grow well", "pretty!", "almost bloomed"],
+      admire: ["impressive", "who's that?", "majestic", "nice work", "a classic"],
+      relax: ["so sunny", "shade~", "relaxing", "ahh…", "beach day"],
     };
+    // POI kind → the leisure task an NPC performs when it arrives there.
+    this.npcDestTask = { bench: "rest", fountain: "wish", cafe: "coffee", garden: "tend", statue: "admire", umbrella: "relax" };
     this.npcs = []; this._npcId = 0; this.npcTarget = 0; this.npcSpeed = 26;
 
     this.projects = []; this.occ = {}; this.projByName = new Map();
@@ -163,7 +170,7 @@ export class LivingCity {
   createProject(name) {
     const cell = this.placeCell(); this.occ[cell.cx + "," + cell.cy] = 1;
     const color = this.colorPool[this.hashStr(name) % this.colorPool.length];
-    const p = { id: ++this._pid, name, color, cell, agents: [], agentById: new Map(), life: 0, target: 1, removing: false, dormant: false, decorKind: this.hashStr(name) % 5, born: performance.now() };
+    const p = { id: ++this._pid, name, color, cell, agents: [], agentById: new Map(), life: 0, target: 1, removing: false, dormant: false, decorKind: this.hashStr(name) % 5, floors: 1 + (this.hashStr(name + "floors") % 3), born: performance.now() };
     this.projects.push(p); this.projByName.set(name, p);
     return p;
   }
@@ -261,9 +268,9 @@ export class LivingCity {
   // Walkable commons = the park infill + beach ring (cached against the land signature).
   npcWalkable() {
     if (this._npcWalkSig === this._landSig && this._npcWalk) return this._npcWalk;
-    const out = [], land = this._land || {};
-    for (const k in land) { const e = land[k]; if (e.park || e.beach) out.push(k); }
-    this._npcWalk = out; this._npcWalkSig = this._landSig; return out;
+    const out = [], pois = [], land = this._land || {};
+    for (const k in land) { const e = land[k]; if (e.park || e.beach) { out.push(k); if (e.poi && this.npcDestTask[e.poi]) pois.push({ key: k, kind: e.poi }); } }
+    this._npcWalk = out; this._npcPOI = pois; this._npcWalkSig = this._landSig; return out;
   }
   ensureNPCs() {
     const walk = this.npcWalkable();
@@ -283,9 +290,12 @@ export class LivingCity {
     this.npcPickTarget(n, walk); this.npcs.push(n);
   }
   npcPickTarget(n, walk) {
-    walk = walk || this.npcWalkable(); if (!walk.length) { n.tx = n.wx; n.ty = n.wy; n.state = "task"; n.taskT = 2; return; }
+    walk = walk || this.npcWalkable(); if (!walk.length) { n.tx = n.wx; n.ty = n.wy; n.state = "task"; n.taskT = 2; n.dest = null; return; }
+    const pois = this._npcPOI || [];
+    if (pois.length && Math.random() < 0.5) { const poi = this.pickArr(pois), [cx, cy] = poi.key.split(",").map(Number), w = this.worldPos({ cx, cy });
+      n.tx = w.x + this.rnd(-this.A * 0.18, this.A * 0.18); n.ty = w.y + this.rnd(-this.B * 0.18, this.B * 0.18); n.dest = poi.kind; n.state = "walk"; return; }
     const [cx, cy] = this.pickArr(walk).split(",").map(Number), w = this.worldPos({ cx, cy });
-    n.tx = w.x + this.rnd(-this.A * 0.4, this.A * 0.4); n.ty = w.y + this.rnd(-this.B * 0.4, this.B * 0.4); n.state = "walk";
+    n.tx = w.x + this.rnd(-this.A * 0.4, this.A * 0.4); n.ty = w.y + this.rnd(-this.B * 0.4, this.B * 0.4); n.dest = null; n.state = "walk";
   }
   updateNPCs(dt, t) {
     if (this.paused) return; const sp = Math.max(1, this.speed);
@@ -293,6 +303,7 @@ export class LivingCity {
       if (n.state === "walk") {
         const dx = n.tx - n.wx, dy = n.ty - n.wy, d = Math.hypot(dx, dy);
         if (d > 2) { const step = Math.min(d, this.npcSpeed * n.spd * dt * sp); n.wx += dx / d * step; n.wy += dy / d * step; if (dx < -0.3) n.faceLeft = true; else if (dx > 0.3) n.faceLeft = false; n.phase += dt * 7; }
+        else if (n.dest && this.npcDestTask[n.dest]) { n.task = this.npcDestTask[n.dest]; n.dest = null; n.state = "task"; n.taskT = this.rnd(3, 7); n.emoteT = this.rnd(0.3, 1.5); } // use the POI
         else if (Math.random() < 0.3) { this.npcPickTarget(n); } // keep ambling
         else { const c = this.worldToCell(n.wx, n.wy), e = (this._land || {})[c.cx + "," + c.cy], beach = e && e.beach;
           n.task = this.pickArr(beach ? ["gaze", "fish", "chat", "stroll"] : ["gaze", "rest", "chat", "stroll"]);
@@ -389,8 +400,15 @@ export class LivingCity {
   /* ---------- ground (connected) ---------- */
   computeLand(live) { const occ = {}; for (const p of live)occ[p.cell.cx + "," + p.cell.cy] = p; const land = {}; for (const k in occ)land[k] = { park: false, p: occ[k] };
     const cand = new Set(); for (const k in occ) { const [cx, cy] = k.split(",").map(Number); for (const d of this.edge4) { const nk = (cx + d[0]) + "," + (cy + d[1]); if (!occ[nk]) cand.add(nk); } }
-    for (const nk of cand) { const [cx, cy] = nk.split(",").map(Number); let c = 0; for (const d of this.edge4) { if (occ[(cx + d[0]) + "," + (cy + d[1])]) c++; } if (c >= 3) land[nk] = { park: true, p: null }; }
+    // Every empty cell touching the cluster becomes parkland — a green belt wraps the town
+    // (and fills any interior holes), giving fountains/benches/gardens somewhere to live.
+    for (const nk of cand) land[nk] = { park: true, p: null };
     if (this.world().cozy || this.world().bg.sky) { const ring = new Set(); const d8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]; for (const k in land) { const [cx, cy] = k.split(",").map(Number); for (const d of d8) { const nk = (cx + d[0]) + "," + (cy + d[1]); if (!land[nk]) ring.add(nk); } } for (const nk of ring) land[nk] = { beach: true, p: null }; }
+    // Decorate the commons with stable points of interest (parks lush, beach sparse).
+    const parkPoi = ["tree", "tree", "garden", "bench", "lamp", "fountain", "statue", "cafe"];
+    for (const k in land) { const e = land[k]; if (e.p) continue; const h = this.hashStr("poi:" + k);
+      if (e.park) e.poi = parkPoi[h % parkPoi.length];
+      else if (e.beach) { const r = h % 7; e.poi = r === 0 || r === 4 ? "umbrella" : r === 1 ? "sandcastle" : r === 2 ? "cafe" : null; } }
     return { occ, land }; }
   drawGround(ctx, land) { const w = this.world(), pal = w.pal, z = this.cam.z, a = this.A * z, b = this.B * z, Td = 8 * z, tt = performance.now() / 1000;
     const keys = Object.keys(land).sort((u, v) => { const A = u.split(",").map(Number), B = v.split(",").map(Number); return (A[0] + A[1]) - (B[0] + B[1]); });
@@ -405,17 +423,14 @@ export class LivingCity {
         if (!at(1, 0)) { ctx.beginPath(); ctx.moveTo(R[0], R[1]); ctx.lineTo(Bm[0], Bm[1]); ctx.stroke(); }
         if (!at(0, 1)) { ctx.beginPath(); ctx.moveTo(Bm[0], Bm[1]); ctx.lineTo(L[0], L[1]); ctx.stroke(); }
         const hh = ((cell.cx * 7 + cell.cy * 13) % 5 + 5) % 5; if (hh < 2) this.ell(ctx, s.x + (hh ? -6 : 5) * z, s.y + 2 * z, 1.7 * z, 1.1 * z, "#9a8460");
+        if (e.poi) this.drawPOI(ctx, e.poi, s.x, s.y, z, tt, cell);
         ctx.globalAlpha = 1; continue; }
       if (!at(1, 0)) this.poly(ctx, [R, Bm, [Bm[0], Bm[1] + Td], [R[0], R[1] + Td]], this.shade(pal.gSide, 0.85));
       if (!at(0, 1)) this.poly(ctx, [Bm, L, [L[0], L[1] + Td], [Bm[0], Bm[1] + Td]], pal.gSide);
       const paved = w.dark ? this.tint(pal.plaza, 0.16) : this.tint(pal.road, 0.5);
       this.poly(ctx, [T, R, Bm, L], e.park ? this.shade(pal.gTop, 0.92) : paved);
-      if (e.park) { const variant = ((cell.cx * 5 + cell.cy * 11) % 3 + 3) % 3;
-        if (w.cozy) {
-          if (variant === 0) { ctx.fillStyle = "#6b4a2e"; ctx.fillRect(s.x - 1.4 * z, s.y - 6 * z, 2.8 * z, 7 * z); this.ell(ctx, s.x, s.y - 9 * z, 7 * z, 7 * z, "#4d7a3a"); this.ell(ctx, s.x - 3 * z, s.y - 7 * z, 5 * z, 5 * z, "#5e8b4a"); this.ell(ctx, s.x + 3 * z, s.y - 8 * z, 4.5 * z, 4.5 * z, "#6f9a55"); }
-          else if (variant === 1) { ctx.fillStyle = "#3a3026"; ctx.fillRect(s.x - 0.8 * z, s.y - 12 * z, 1.6 * z, 12 * z); const on = 0.6 + 0.35 * Math.sin(tt * 2 + cell.cx); this.ell(ctx, s.x, s.y - 13 * z, 5 * z, 5 * z, this.rgbaA("#ffd98a", 0.12)); this.ell(ctx, s.x, s.y - 13 * z, 2.3 * z, 2.3 * z, this.rgbaA("#ffd98a", on)); }
-          else { this.ell(ctx, s.x - 2 * z, s.y, 3 * z, 2 * z, "#8a8478"); this.ell(ctx, s.x - 2 * z, s.y - 1 * z, 2.2 * z, 1.5 * z, "#9a948a"); this.ell(ctx, s.x + 2.6 * z, s.y - 0.5 * z, 2.4 * z, 1.7 * z, "#5e8b4a"); this.ell(ctx, s.x + 2.6 * z, s.y - 1.6 * z, 1.8 * z, 1.6 * z, "#6f9a55"); }
-        } else { this.ell(ctx, s.x, s.y, 4 * z, 3 * z, this.shade(pal.gTop, 0.7)); this.ell(ctx, s.x, s.y - 4 * z, 5 * z, 5 * z, this.tint(pal.gTop, 0.15)); } }
+      if (e.park) { if (w.cozy) { if (e.poi) this.drawPOI(ctx, e.poi, s.x, s.y, z, tt, cell); }
+        else { this.ell(ctx, s.x, s.y, 4 * z, 3 * z, this.shade(pal.gTop, 0.7)); this.ell(ctx, s.x, s.y - 4 * z, 5 * z, 5 * z, this.tint(pal.gTop, 0.15)); } }
       if (e.p && !e.park) { ctx.strokeStyle = this.rgbaA(pal.gSide, 0.5); ctx.lineWidth = 1 * z; ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(Bm[0], Bm[1]); ctx.lineTo(R[0], R[1]); ctx.stroke();
         ctx.strokeStyle = this.rgbaA(pal.gSide, 0.22); ctx.beginPath(); ctx.moveTo(T[0], T[1]); ctx.lineTo(s.x, s.y); ctx.lineTo(Bm[0], Bm[1]); ctx.moveTo(L[0], L[1]); ctx.lineTo(s.x, s.y); ctx.lineTo(R[0], R[1]); ctx.stroke(); }
       ctx.globalAlpha = 1; } }
@@ -454,6 +469,38 @@ export class LivingCity {
     ctx.fillStyle = "rgba(180,190,205," + (0.5 + 0.4 * Math.sin(t * 3)).toFixed(2) + ")"; ctx.font = "bold " + Math.round(7 * z) + "px 'JetBrains Mono',monospace"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
     const zb = (Math.sin(t * 2) * 2); ctx.fillText("z", x + 8 * z, y - 9 * z + zb); ctx.fillText("z", x + 11 * z, y - 13 * z + zb * 0.6); }
 
+  // Lit windows mapped onto a wall face (base edge b0→b1, rising by `wh`), one band per floor.
+  faceWindows(ctx, b0, b1, wh, floors, p, t, skipDoor) {
+    const pal = this.world().pal, z = this.cam.z, rc = this.world().roof || pal.wallB;
+    const t0 = [b0[0], b0[1] - wh], t1 = [b1[0], b1[1] - wh];
+    const lp = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+    const pt = (u, v) => lp(lp(b0, b1, u), lp(t0, t1, u), v);
+    for (let f = 0; f < floors; f++) {
+      const vc = (f + 0.55) / floors, vh = Math.min(0.26, 0.32 / floors), uw = 0.08;
+      const cols = (f === 0 && skipDoor) ? [0.26, 0.82] : [0.26, 0.54, 0.82];
+      for (const u of cols) {
+        const a = pt(u - uw, vc - vh), b = pt(u + uw, vc - vh), c = pt(u + uw, vc + vh), d = pt(u - uw, vc + vh);
+        const h = this.hashStr(p.name + "w" + f + u), lit = (h % 5) !== 0, flick = lit && (h % 11 === 0) && (Math.floor(t * 1.3 + h) % 2 === 0);
+        this.poly(ctx, [a, b, c, d], (!lit || flick) ? "#1b2330" : this.rgbaA(pal.window, 0.82));
+        ctx.strokeStyle = this.shade(rc, 0.6); ctx.lineWidth = 0.7 * z; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.stroke();
+      }
+    }
+  }
+  // A point of interest on a commons tile (parks + beach). Cheap pixel props; some animate.
+  drawPOI(ctx, kind, x, y, z, t, cell) { const ph = (cell.cx * 7 + cell.cy * 13);
+    switch (kind) {
+      case "tree": ctx.fillStyle = "#6b4a2e"; ctx.fillRect(x - 1.4 * z, y - 6 * z, 2.8 * z, 7 * z); this.ell(ctx, x, y - 9 * z, 7 * z, 7 * z, "#4d7a3a"); this.ell(ctx, x - 3 * z, y - 7 * z, 5 * z, 5 * z, "#5e8b4a"); this.ell(ctx, x + 3 * z, y - 8 * z, 4.5 * z, 4.5 * z, "#6f9a55"); break;
+      case "lamp": { ctx.fillStyle = "#3a3026"; ctx.fillRect(x - 0.8 * z, y - 12 * z, 1.6 * z, 12 * z); const on = 0.6 + 0.35 * Math.sin(t * 2 + cell.cx); this.ell(ctx, x, y - 13 * z, 5 * z, 5 * z, this.rgbaA("#ffd98a", 0.12)); this.ell(ctx, x, y - 13 * z, 2.3 * z, 2.3 * z, this.rgbaA("#ffd98a", on)); break; }
+      case "bench": this.ell(ctx, x, y + 1.5 * z, 6 * z, 2 * z, "rgba(0,0,0,0.18)"); ctx.fillStyle = "#4a3526"; ctx.fillRect(x - 5 * z, y - 0.5 * z, 1.4 * z, 3 * z); ctx.fillRect(x + 3.6 * z, y - 0.5 * z, 1.4 * z, 3 * z); this.poly(ctx, [[x - 6 * z, y - 1 * z], [x + 6 * z, y - 1 * z], [x + 5 * z, y + 0.5 * z], [x - 5 * z, y + 0.5 * z]], "#7a5a3a"); this.poly(ctx, [[x - 6 * z, y - 5 * z], [x + 6 * z, y - 5 * z], [x + 6 * z, y - 3.6 * z], [x - 6 * z, y - 3.6 * z]], "#8a6a46"); break;
+      case "fountain": this.ell(ctx, x, y + 1 * z, 9 * z, 4.5 * z, "rgba(0,0,0,0.16)"); this.ell(ctx, x, y, 9 * z, 4.5 * z, "#9aa0a6"); this.ell(ctx, x, y, 7 * z, 3.4 * z, "#5fb0c8"); this.ell(ctx, x, y, 4.5 * z, 2.1 * z, "#7fd0e0"); ctx.fillStyle = "#b0b6bc"; ctx.fillRect(x - 1 * z, y - 6 * z, 2 * z, 6 * z); this.ell(ctx, x, y - 6.5 * z, 2.4 * z, 1.3 * z, "#8fdcec"); { for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2, dr = 2.4 + Math.abs(Math.sin(t * 3 + i)) * 2.2; this.ell(ctx, x + Math.cos(a) * dr * z, y - 7 * z - Math.abs(Math.sin(t * 3 + i)) * 3 * z, 0.9 * z, 0.9 * z, this.rgbaA("#cdeef6", 0.85)); } } break;
+      case "garden": this.poly(ctx, [[x, y - 2.6 * z], [x + 4.5 * z, y], [x, y + 2.6 * z], [x - 4.5 * z, y]], "#4d7a3a"); { const cols = ["#e06a9a", "#ffd98a", "#f3efe6", "#e0664f", "#a07cf0"]; for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; this.ell(ctx, x + Math.cos(a) * 2.6 * z, y + Math.sin(a) * 1.5 * z - 1 * z, 1 * z, 1 * z, cols[(ph + i) % cols.length]); } } break;
+      case "statue": this.box(ctx, x, y, 2.6 * z, 1.6 * z, 4 * z, "#8a8478", "#6f6a60", { win: false }); { const gx = x, gy = y - 4 * z; this.ell(ctx, gx, gy - 6 * z, 1.6 * z, 1.8 * z, "#b6b0a4"); ctx.fillStyle = "#aaa498"; ctx.fillRect(gx - 1.4 * z, gy - 5 * z, 2.8 * z, 5 * z); ctx.fillStyle = "#9a948a"; ctx.fillRect(gx - 2.6 * z, gy - 4.4 * z, 1.4 * z, 0.9 * z); } break;
+      case "cafe": this.ell(ctx, x, y + 1.5 * z, 8 * z, 2.6 * z, "rgba(0,0,0,0.18)"); this.box(ctx, x, y, 5 * z, 3 * z, 7 * z, "#7a5a3a", "#5a3f28", { win: false }); for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? "#c0563f" : "#f3efe6"; this.poly(ctx, [[x - 6 * z + i * 3 * z, y - 9 * z], [x - 3 * z + i * 3 * z, y - 9 * z], [x - 3.8 * z + i * 3 * z, y - 6.6 * z], [x - 6.8 * z + i * 3 * z, y - 6.6 * z]], i % 2 ? "#c0563f" : "#e8d9b8"); } ctx.fillStyle = "#2a221a"; ctx.fillRect(x - 3.4 * z, y - 5.5 * z, 6.8 * z, 3 * z); ctx.fillStyle = "#ffd98a"; ctx.font = "bold " + Math.round(3 * z) + "px 'JetBrains Mono',monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("☕", x, y - 4 * z); break;
+      case "umbrella": ctx.fillStyle = "#6b4a2e"; ctx.fillRect(x - 0.6 * z, y - 11 * z, 1.2 * z, 11 * z); this.poly(ctx, [[x - 8 * z, y - 10 * z], [x + 8 * z, y - 10 * z], [x, y - 14 * z]], "#e0664f"); this.poly(ctx, [[x - 8 * z, y - 10 * z], [x - 2.7 * z, y - 10 * z], [x - 1.3 * z, y - 13 * z], [x - 5.3 * z, y - 11.6 * z]], "#f3efe6"); this.poly(ctx, [[x + 2.7 * z, y - 10 * z], [x + 8 * z, y - 10 * z], [x + 5.3 * z, y - 11.6 * z], [x + 1.3 * z, y - 13 * z]], "#f3efe6"); break;
+      case "sandcastle": ctx.fillStyle = "#c9a878"; this.box(ctx, x, y, 3 * z, 1.8 * z, 3 * z, "#cdb98f", "#b39a6a", { win: false }); this.box(ctx, x - 2.4 * z, y + 0.5 * z, 1.4 * z, 1 * z, 3 * z, "#cdb98f", "#b39a6a", { win: false }); this.box(ctx, x + 2.4 * z, y + 0.5 * z, 1.4 * z, 1 * z, 3 * z, "#cdb98f", "#b39a6a", { win: false }); ctx.fillStyle = "#6b4a2e"; ctx.fillRect(x - 0.3 * z, y - 6 * z, 0.6 * z, 3 * z); ctx.fillStyle = "#e0664f"; ctx.fillRect(x + 0.3 * z, y - 6 * z, 2 * z, 1.4 * z); break;
+    }
+  }
+
   /* ---------- room ---------- */
   drawParcel(ctx, p, t) { if (p.dormant) { this.drawDormant(ctx, p, t); return; } const z = this.cam.z; const s = this.project(this.worldPos(p.cell)); const a = this.A * z, b = this.B * z; const pal = this.world().pal, dark = this.world().dark;
     const ease = p.life * p.life * (3 - 2 * p.life); const grow = 0.62 + 0.38 * ease;
@@ -463,13 +510,15 @@ export class LivingCity {
     const rm = this.roomMats[(p.decorKind || 0) % 5];
     this.poly(ctx, [T, R, Bm, L], pal.plaza); this.poly(ctx, [T, R, Bm, L], this.rgbaA(rm.f, dark ? rm.a * 0.92 : rm.a)); this.poly(ctx, [T, R, Bm, L], this.rgbaA(p.color, dark ? 0.12 : 0.08));
     if (p.agents.length >= 4) this.ell(ctx, s.x, s.y, fa * 0.85, fb * 0.85, this.rgbaA(p.color, 0.05 * Math.min(1, p.agents.length / 6)));
-    const wh = 13 * z * grow;
+    const floors = p.civic ? 1 : (p.floors || 1), fh = 12 * z * grow, wh = p.civic ? 13 * z * grow : fh * floors;
     this.poly(ctx, [L, T, [T[0], T[1] - wh], [L[0], L[1] - wh]], this.shade(pal.wallA, 0.66));
     this.poly(ctx, [T, R, [R[0], R[1] - wh], [T[0], T[1] - wh]], this.shade(pal.wallA, 0.84));
+    if (!p.civic) { this.faceWindows(ctx, L, T, wh, floors, p, t, false); this.faceWindows(ctx, T, R, wh, floors, p, t, true); }
     ctx.strokeStyle = p.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(L[0], L[1] - wh); ctx.lineTo(T[0], T[1] - wh); ctx.lineTo(R[0], R[1] - wh); ctx.stroke();
+    for (let f = 1; f < floors; f++) { const yy = wh * f / floors; ctx.strokeStyle = this.rgbaA(this.shade(pal.wallA, 0.5), 0.6); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L[0], L[1] - yy); ctx.lineTo(T[0], T[1] - yy); ctx.lineTo(R[0], R[1] - yy); ctx.stroke(); }
     ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(Bm[0], Bm[1]); ctx.lineTo(R[0], R[1]); ctx.stroke();
     if (!p.civic) {
-      const f0 = 0.42, f1 = 0.6, dh = wh * 0.8;
+      const f0 = 0.42, f1 = 0.6, dh = Math.min(wh * 0.8, fh * 0.78);
       const d0 = [T[0] + (R[0] - T[0]) * f0, T[1] + (R[1] - T[1]) * f0], d1 = [T[0] + (R[0] - T[0]) * f1, T[1] + (R[1] - T[1]) * f1];
       const d0t = [d0[0], d0[1] - dh], d1t = [d1[0], d1[1] - dh];
       this.poly(ctx, [d0, d1, d1t, d0t], dark ? "#0d1015" : "#241a12");

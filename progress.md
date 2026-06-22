@@ -180,6 +180,26 @@ walkable set is cached against the land signature. Cost is negligible — 10 age
 measured **5.7%** renderer CPU. Key methods: `ensureNPCs`/`spawnNPC`/`npcPickTarget`/
 `updateNPCs`/`drawNPC` + `worldToCell`/`npcWalkable`.
 
+## v3.4 — multi-story buildings, parks & things to do
+
+Richened the world (`client/src/city.ts`):
+- **Multi-story buildings.** Each project gets a stable `floors` count (1–3 by name hash);
+  walls rise `fh * floors` with **lit window grids per floor** (`faceWindows`, bilinear-mapped
+  onto each visible wall face, some dark/flickering) and per-floor divider lines. Door height
+  is now fixed to one storey. Civic yards stay single-storey.
+- **A green park belt.** The auto-layout packed towns solid, so parks (and their props) almost
+  never had a place. `computeLand` now makes **every empty cell touching the cluster** parkland —
+  a grass belt wraps the town (and fills interior holes), beach beyond.
+- **Points of interest.** `computeLand` assigns stable POIs to commons tiles (`drawPOI`): parks
+  get trees, lamps, **benches, fountains** (animated jets), **flower gardens, statues, cafés**;
+  the beach gets **umbrellas, sandcastles, cafés**.
+- **Stuff to do.** NPCs now bias toward POI tiles (~50%) and, on arrival, perform the matching
+  task with themed speech: bench→rest, fountain→"make a wish", café→"one coffee", garden→tend,
+  statue→admire, umbrella→relax (plus the existing stroll/gaze/fish/chat). `npcDestTask` maps
+  POI→task; POI tiles cached alongside the walkable set.
+
+Cost stayed cheap: 10 agents + parks + NPCs + POIs measured **~10% renderer CPU**.
+
 ## Status: working v3 ✅ — desktop app
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`
