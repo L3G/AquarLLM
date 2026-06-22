@@ -42,11 +42,15 @@ export class ActivityLog {
   }
 
   add(entries: LogEntry[]): void {
-    for (const e of entries) this.row(e);
+    if (!entries.length) return;
+    const frag = document.createDocumentFragment();
+    // newest first: prepend the batch as a single fragment (one reflow)
+    for (let i = entries.length - 1; i >= 0; i--) frag.appendChild(this.makeRow(entries[i]));
+    this.el.prepend(frag);
     while (this.el.childElementCount > this.max) this.el.lastElementChild?.remove();
   }
 
-  private row(e: LogEntry): void {
+  private makeRow(e: LogEntry): HTMLElement {
     const [label, color] = ACT_STYLE[e.activity] ?? [e.activity, "#9aa6b4", ""];
     const [, dot] = KIND_STYLE[e.agentKind] ?? ["", "#999"];
     const row = document.createElement("div");
@@ -57,7 +61,7 @@ export class ActivityLog {
       `<span class="lg-p">${esc(e.project || e.displayName || "")}</span>` +
       `<span class="lg-a" style="color:${color}">${label}</span>` +
       (e.detail ? `<span class="lg-d">${esc(e.detail)}</span>` : "");
-    this.el.prepend(row);
+    return row;
   }
 }
 

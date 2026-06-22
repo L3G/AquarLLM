@@ -155,7 +155,14 @@ The v2 scene is draw-heavy and felt laggy in the app. Fixes (`client/src/city.ts
 loop **crash-resilient** (schedule the next frame first; a caught error no longer stops
 the loop — that stop/watchdog-restart cycle read as stutter), and set Electron
 `backgroundThrottling: false` so the menu-bar window stays smooth when unfocused.
-Measured renderer ~7% CPU after.
+
+Then for the **many-agents** case (still laggy with lots running): cache the **static
+background** (water gradient / glow / grid / water-pool) to an offscreen canvas and blit
+it each frame, drawing only the cheap animated overlay (waves/boats/gulls/twinkle) live
+(`ensureStaticBg`/`drawStaticBg`/`drawAnimatedBg`); **coalesce server snapshot broadcasts
++ batch log events** to ~12.5Hz (`app/src/server.ts`) so a burst of activity doesn't
+flood the renderer; and **batch activity-feed DOM** inserts via a DocumentFragment.
+Measured: 9 agents went from ~47% → and **56 agents now run at ~11%** renderer CPU.
 
 ## Status: working v3 ✅ — desktop app
 

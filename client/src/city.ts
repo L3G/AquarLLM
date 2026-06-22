@@ -274,22 +274,42 @@ export class LivingCity {
   rebuildBg() { const w = this.world(); this._bg = {};
     if (w.bg.stars) { const s = []; for (let i = 0; i < 150; i++)s.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, a: this.rnd(0.3, 1), tw: Math.random() * 6 }); this._bg.stars = s; }
     if (w.bg.board) { const tr = []; for (let i = 0; i < 28; i++)tr.push({ x: Math.random(), y: Math.random(), len: this.rnd(0.06, 0.22), dir: Math.random() < 0.5 ? 0 : 1, bend: Math.random() < 0.5 }); this._bg.traces = tr; } }
-  drawWater(ctx) { const tt = performance.now() / 1000, W = this._W, H = this._H; const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#163a4c"); g.addColorStop(0.55, "#103040"); g.addColorStop(1, "#0c2532"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    ctx.lineWidth = 1.4; for (let i = 0; i < 16; i++) { const yy = (i / 16) * H + Math.sin(tt * 0.5 + i) * 4; ctx.strokeStyle = "rgba(150,205,208," + (0.05 + 0.03 * Math.sin(tt + i)).toFixed(3) + ")"; ctx.beginPath(); for (let xx = 0; xx <= W; xx += 26) { const yo = Math.sin(xx * 0.018 + tt * 0.7 + i) * 2.2; xx === 0 ? ctx.moveTo(xx, yy + yo) : ctx.lineTo(xx, yy + yo); } ctx.stroke(); }
-    this.drawBoat(ctx, W * 0.15, H * 0.2, tt, 0); this.drawBoat(ctx, W * 0.82, H * 0.74, tt, 1); }
-  drawBackground(ctx) { const w = this.world(); if (w.cozy) { this.drawWater(ctx); } else { ctx.fillStyle = w.bg.top; ctx.fillRect(0, 0, this._W, this._H); }
-    if (w.bg.sky) { const g = ctx.createLinearGradient(0, 0, 0, this._H); g.addColorStop(0, "#20335a"); g.addColorStop(0.6, "#16233c"); g.addColorStop(1, "#101a2e"); ctx.fillStyle = g; ctx.fillRect(0, 0, this._W, this._H); }
-    if (w.bg.stars && this._bg.stars) { const tt = performance.now() / 1000; for (const s of this._bg.stars) { const a = s.a * (0.6 + 0.4 * Math.sin(tt + s.tw)); ctx.fillStyle = "rgba(220,230,255," + a.toFixed(2) + ")"; ctx.fillRect(Math.round(s.x * this._W), Math.round(s.y * this._H), s.r, s.r); } }
-    if (w.bg.board && this._bg.traces) { ctx.strokeStyle = "rgba(60,150,90,0.18)"; ctx.lineWidth = 2; for (const tr of this._bg.traces) { const x = tr.x * this._W, y = tr.y * this._H, L = tr.len * this._W; ctx.beginPath(); if (tr.dir === 0) { ctx.moveTo(x, y); ctx.lineTo(x + L, y); if (tr.bend) ctx.lineTo(x + L, y + L * 0.5); } else { ctx.moveTo(x, y); ctx.lineTo(x, y + L); if (tr.bend) ctx.lineTo(x + L * 0.5, y + L); } ctx.stroke(); ctx.fillStyle = "rgba(120,200,140,0.22)"; ctx.fillRect(x - 2, y - 2, 4, 4); } }
-    if (w.bg.grid) { ctx.strokeStyle = "rgba(120,80,170,0.07)"; ctx.lineWidth = 1; const g = 64; for (let i = -this._H; i < this._W + this._H; i += g) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + this._H, this._H); ctx.stroke(); ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i - this._H, this._H); ctx.stroke(); } }
-    this.ell(ctx, (this._W - 250) / 2, this._H * 0.5, this._W * 0.5, this._H * 0.42, w.bg.glow);
-    if (this.state.world === "harbor") { const cx = (this._W - 250) / 2, cy = this._H * 0.52, tt = performance.now() / 1000;
-      this.ell(ctx, cx, cy + 24, this._W * 0.46, this._H * 0.34, "rgba(46,110,120,0.16)");
-      this.ell(ctx, cx, cy + 24, this._W * 0.33, this._H * 0.23, "rgba(64,138,142,0.14)");
+  // The static background (gradient/glow/grid/water-pool) is expensive and unchanging —
+  // render it once to an offscreen canvas and blit it each frame.
+  ensureStaticBg() {
+    const key = this.state.world + "|" + this._townW + "|" + this._townH + "|" + this._dpr;
+    if (this._sbgKey === key && this._sbg) return;
+    if (!this._sbg) this._sbg = document.createElement("canvas");
+    const W = this._townW, H = this._townH, dpr = this._dpr;
+    const cv = this._sbg; cv.width = Math.max(1, Math.round(W * dpr)); cv.height = Math.max(1, Math.round(H * dpr));
+    const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    this.drawStaticBg(ctx, W, H);
+    this._sbgKey = key;
+  }
+  drawStaticBg(ctx, W, H) { const w = this.world();
+    if (w.cozy) { const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#163a4c"); g.addColorStop(0.55, "#103040"); g.addColorStop(1, "#0c2532"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+    else { ctx.fillStyle = w.bg.top; ctx.fillRect(0, 0, W, H); }
+    if (w.bg.sky) { const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#20335a"); g.addColorStop(0.6, "#16233c"); g.addColorStop(1, "#101a2e"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+    if (w.bg.board && this._bg.traces) { ctx.strokeStyle = "rgba(60,150,90,0.18)"; ctx.lineWidth = 2; for (const tr of this._bg.traces) { const x = tr.x * W, y = tr.y * H, L = tr.len * W; ctx.beginPath(); if (tr.dir === 0) { ctx.moveTo(x, y); ctx.lineTo(x + L, y); if (tr.bend) ctx.lineTo(x + L, y + L * 0.5); } else { ctx.moveTo(x, y); ctx.lineTo(x, y + L); if (tr.bend) ctx.lineTo(x + L * 0.5, y + L); } ctx.stroke(); ctx.fillStyle = "rgba(120,200,140,0.22)"; ctx.fillRect(x - 2, y - 2, 4, 4); } }
+    if (w.bg.grid) { ctx.strokeStyle = "rgba(120,80,170,0.07)"; ctx.lineWidth = 1; const g = 64; for (let i = -H; i < W + H; i += g) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + H, H); ctx.stroke(); ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i - H, H); ctx.stroke(); } }
+    this.ell(ctx, (W - 250) / 2, H * 0.5, W * 0.5, H * 0.42, w.bg.glow);
+    if (this.state.world === "harbor") { const cx = (W - 250) / 2, cy = H * 0.52;
+      this.ell(ctx, cx, cy + 24, W * 0.46, H * 0.34, "rgba(46,110,120,0.16)");
+      this.ell(ctx, cx, cy + 24, W * 0.33, H * 0.23, "rgba(64,138,142,0.14)"); }
+  }
+  drawAnimatedBg(ctx) { const w = this.world(), W = this._W, H = this._H, tt = performance.now() / 1000;
+    if (w.bg.stars && this._bg.stars) { for (const s of this._bg.stars) { const a = s.a * (0.6 + 0.4 * Math.sin(tt + s.tw)); ctx.fillStyle = "rgba(220,230,255," + a.toFixed(2) + ")"; ctx.fillRect(Math.round(s.x * W), Math.round(s.y * H), s.r, s.r); } }
+    if (w.cozy) {
+      ctx.lineWidth = 1.4; for (let i = 0; i < 16; i++) { const yy = (i / 16) * H + Math.sin(tt * 0.5 + i) * 4; ctx.strokeStyle = "rgba(150,205,208," + (0.05 + 0.03 * Math.sin(tt + i)).toFixed(3) + ")"; ctx.beginPath(); for (let xx = 0; xx <= W; xx += 26) { const yo = Math.sin(xx * 0.018 + tt * 0.7 + i) * 2.2; xx === 0 ? ctx.moveTo(xx, yy + yo) : ctx.lineTo(xx, yy + yo); } ctx.stroke(); }
+      this.drawBoat(ctx, W * 0.15, H * 0.2, tt, 0); this.drawBoat(ctx, W * 0.82, H * 0.74, tt, 1);
+    }
+    if (this.state.world === "harbor") { const cx = (W - 250) / 2, cy = H * 0.52;
       ctx.strokeStyle = "rgba(150,205,208,0.09)"; ctx.lineWidth = 1.5;
-      for (let i = 0; i < 7; i++) { const yy = cy - 66 + i * 34 + Math.sin(tt + i) * 3, xw = this._W * 0.30 * (1 - Math.abs(i - 3) / 5.5); ctx.beginPath(); ctx.moveTo(cx - xw, yy); ctx.lineTo(cx - xw * 0.45, yy); ctx.moveTo(cx + xw * 0.45, yy); ctx.lineTo(cx + xw, yy); ctx.stroke(); }
-      this.drawBoat(ctx, cx - this._W * 0.33, cy + 6, tt, 0); this.drawBoat(ctx, cx + this._W * 0.31, cy + 44, tt, 1); this.drawBoat(ctx, cx - this._W * 0.10, cy + this._H * 0.33, tt, 2);
-      ctx.strokeStyle = "rgba(222,227,232,0.5)"; ctx.lineWidth = 1.6; for (let i = 0; i < 3; i++) { const gx = cx - this._W * 0.22 + ((tt * 16 + i * 150) % (this._W * 0.5)), gy = this._H * 0.13 + i * 24 + Math.sin(tt * 1.5 + i) * 5; ctx.beginPath(); ctx.moveTo(gx - 5, gy); ctx.quadraticCurveTo(gx, gy - 3.5, gx + 1, gy); ctx.quadraticCurveTo(gx + 2, gy - 3.5, gx + 7, gy); ctx.stroke(); } } }
+      for (let i = 0; i < 7; i++) { const yy = cy - 66 + i * 34 + Math.sin(tt + i) * 3, xw = W * 0.30 * (1 - Math.abs(i - 3) / 5.5); ctx.beginPath(); ctx.moveTo(cx - xw, yy); ctx.lineTo(cx - xw * 0.45, yy); ctx.moveTo(cx + xw * 0.45, yy); ctx.lineTo(cx + xw, yy); ctx.stroke(); }
+      this.drawBoat(ctx, cx - W * 0.33, cy + 6, tt, 0); this.drawBoat(ctx, cx + W * 0.31, cy + 44, tt, 1); this.drawBoat(ctx, cx - W * 0.10, cy + H * 0.33, tt, 2);
+      ctx.strokeStyle = "rgba(222,227,232,0.5)"; ctx.lineWidth = 1.6; for (let i = 0; i < 3; i++) { const gx = cx - W * 0.22 + ((tt * 16 + i * 150) % (W * 0.5)), gy = H * 0.13 + i * 24 + Math.sin(tt * 1.5 + i) * 5; ctx.beginPath(); ctx.moveTo(gx - 5, gy); ctx.quadraticCurveTo(gx, gy - 3.5, gx + 1, gy); ctx.quadraticCurveTo(gx + 2, gy - 3.5, gx + 7, gy); ctx.stroke(); } }
+  }
+  rebuildBgInvalidate() { this._sbgKey = null; }
   drawBoat(ctx, x, y, t, i) { const sc = 1.15, bob = Math.sin(t * 1.2 + i) * 2; y += bob;
     this.ell(ctx, x, y + 5 * sc, 12 * sc, 3 * sc, "rgba(0,0,0,0.14)");
     this.poly(ctx, [[x - 11 * sc, y], [x + 11 * sc, y], [x + 7 * sc, y + 5 * sc], [x - 7 * sc, y + 5 * sc]], "#8a5a3a"); this.poly(ctx, [[x - 11 * sc, y], [x + 11 * sc, y], [x + 9 * sc, y - 1.5 * sc], [x - 9 * sc, y - 1.5 * sc]], "#a06a44");
@@ -476,8 +496,13 @@ export class LivingCity {
   resize() { const cv = this.canvas; if (!cv) return; const r = cv.getBoundingClientRect(); const dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); this._townW = r.width; this._townH = r.height; this._dpr = dpr; this.useTownViewport(); }
   useTownViewport() { this._W = this._townW; this._H = this._townH; this._vcx = this.leftGutter + (this._townW - this.leftGutter - 250) / 2; this._vcy = this._townH / 2; }
   setLeftGutter(px) { this.leftGutter = px || 0; }
-  drawTown(t) { const cv = this.canvas; if (!cv) return; this.useTownViewport(); const ctx = cv.getContext("2d"); ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0); ctx.imageSmoothingEnabled = false;
-    this.drawBackground(ctx); const live = this.projects.filter(p => p.life > 0.02);
+  drawTown(t) { const cv = this.canvas; if (!cv) return; this.useTownViewport(); const ctx = cv.getContext("2d");
+    this.ensureStaticBg();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+    if (this._sbg) ctx.drawImage(this._sbg, 0, 0);
+    ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    this.drawAnimatedBg(ctx);
+    const live = this.projects.filter(p => p.life > 0.02);
     // Land/beach structure only changes when the set of live cells changes — cache it
     // (project refs stay live, so per-tile fade alpha is still fresh).
     const sig = live.map(p => p.cell.cx + "," + p.cell.cy).sort().join("|");

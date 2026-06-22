@@ -56,14 +56,26 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
   const world = new World();
   const clients = new Set<WebSocket>();
   const send = (msg: string) => { for (const c of clients) if (c.readyState === 1) c.send(msg); };
-  const broadcast = () => send(JSON.stringify(world.snapshot()));
+  // Coalesce snapshots + batch log events to ~12.5Hz so a burst of agent activity
+  // doesn't flood every client (and the renderer thread) with per-event work.
+  let snapDirty = false;
+  let pendingLog: LogEntry[] = [];
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    flushTimer = null;
+    if (pendingLog.length) { send(JSON.stringify({ type: "log", entries: pendingLog })); pendingLog = []; }
+    if (snapDirty) { snapDirty = false; send(JSON.stringify(world.snapshot())); }
+  };
+  const schedule = () => { if (!flushTimer) flushTimer = setTimeout(flush, 80); };
+  const broadcast = () => { snapDirty = true; schedule(); };
 
   const record = (ev: AgentEvent) => {
     const prev = world.peek(ev.agentId);
     const entry = makeLog(ev, prev);
     const changed = world.apply(ev);
-    if (entry) { world.pushLog(entry); send(JSON.stringify({ type: "log", entries: [entry] })); }
-    if (changed) broadcast();
+    if (entry) { world.pushLog(entry); pendingLog.push(entry); }
+    if (changed) snapDirty = true;
+    if (changed || entry) schedule();
   };
 
   const serveStatic = (pathname: string, res: ServerResponse) => {
@@ -127,7 +139,7 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
   return new Promise((resolve) => {
     httpServer.listen(opts.port, () => resolve({
       world, port: opts.port, broadcast,
-      close: () => { clearInterval(reaper); for (const c of clients) c.close(); wss.close(); httpServer.close(); },
+      close: () => { clearInterval(reaper); if (flushTimer) clearTimeout(flushTimer); for (const c of clients) c.close(); wss.close(); httpServer.close(); },
     }));
   });
 }
