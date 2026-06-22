@@ -96,6 +96,18 @@ export class LivingCity {
     this.bedSlots = [{ x: -13, y: 18 }, { x: 3, y: 21 }, { x: 17, y: 16 }, { x: -2, y: 12 }];
     this.phrases = { read: ["reading…", "utils.go", "config.rs", "what is this?"], edit: ["fixing it", "refactor", "+ tests", "almost…"], run: ["$ build", "$ test", "npm ci", "deploying"], search: ["docs?", "grep -r", "how do I…", "found it!"], think: ["hmm…", "planning", "let me think", "what if…"], wait: ["your call?", "review pls", "blocked", "waiting…"], error: ["uh oh", "✗ failed", "retrying", "broken!"] };
 
+    // Townsfolk — ambient NPCs that live in the parks & shore while the real agents work.
+    this.npcSkin = this.skinTones; this.npcHair = this.hairColors; this.npcPants = this.pantsColors; this.npcCap = this.capColors;
+    this.npcShirt = ["#7a8a4a", "#5a8a6a", "#8a6a4a", "#6a7a9a", "#9a7a5a", "#7a6a8a", "#5a7a8a", "#a08a5a", "#8a5a6a", "#6a8a7a"];
+    this.npcEmotes = {
+      gaze: ["nice view", "lovely", "the sea…", "calm…", "so peaceful"],
+      rest: ["*sip*", "phew", "nice spot", "a break~", "ahh…"],
+      chat: ["hello!", "how's it?", "hi there", "did you hear?", "g'day"],
+      fish: ["any fish?", "patience…", "got one!", "just one more", "nibble?"],
+      stroll: ["la la~", "…", "off we go", "hmm", "such a day"],
+    };
+    this.npcs = []; this._npcId = 0; this.npcTarget = 0; this.npcSpeed = 26;
+
     this.projects = []; this.occ = {}; this.projByName = new Map();
     this._pid = 0;
     this.edge4 = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -138,6 +150,7 @@ export class LivingCity {
 
   /* ---------- model ---------- */
   worldPos(cell) { return { x: (cell.cx - cell.cy) * this.A, y: (cell.cx + cell.cy) * this.B }; }
+  worldToCell(wx, wy) { return { cx: Math.round((wx / this.A + wy / this.B) / 2), cy: Math.round((wy / this.B - wx / this.A) / 2) }; }
   centroidCell() { const a = this.projects.filter(p => !p.removing); if (!a.length) return { cx: 0, cy: 0 }; let sx = 0, sy = 0; for (const p of a) { sx += p.cell.cx; sy += p.cell.cy; } return { cx: sx / a.length, cy: sy / a.length }; }
   placeCell() { const keys = Object.keys(this.occ); if (!keys.length) return { cx: 0, cy: 0 }; const ctr = this.centroidCell(); const cand = {};
     for (const key of keys) { const [cx, cy] = key.split(",").map(Number); for (const d of this.edge4) { const nx = cx + d[0], ny = cy + d[1], nk = nx + "," + ny; if (this.occ[nk]) continue; const dist = Math.hypot(nx - ctr.cx, ny - ctr.cy) + Math.random() * 1.2; if (cand[nk] === undefined || dist < cand[nk].d) cand[nk] = { d: dist, cx: nx, cy: ny }; } }
@@ -241,6 +254,62 @@ export class LivingCity {
       });
       if (p.removing && p.life < 0.02) { for (const a of p.agents) { if (a.commute) a.commute.civ.slotUsed[a.commute.slot] = false; } delete this.occ[p.cell.cx + "," + p.cell.cy]; this.projects.splice(i, 1); this.projByName.delete(p.name); }
     }
+    this.ensureNPCs(); this.updateNPCs(dt, t);
+  }
+
+  /* ---------- townsfolk (ambient NPCs) ---------- */
+  // Walkable commons = the park infill + beach ring (cached against the land signature).
+  npcWalkable() {
+    if (this._npcWalkSig === this._landSig && this._npcWalk) return this._npcWalk;
+    const out = [], land = this._land || {};
+    for (const k in land) { const e = land[k]; if (e.park || e.beach) out.push(k); }
+    this._npcWalk = out; this._npcWalkSig = this._landSig; return out;
+  }
+  ensureNPCs() {
+    const walk = this.npcWalkable();
+    if (!walk.length) { if (this.npcs.length) this.npcs.length = 0; this.npcTarget = 0; return; }
+    this.npcTarget = Math.max(3, Math.min(18, Math.round(walk.length * 0.5)));
+    let n = 0; while (this.npcs.length < this.npcTarget && n++ < 3) this.spawnNPC(walk); // ramp in a few/frame
+    if (this.npcs.length > this.npcTarget) this.npcs.length = this.npcTarget;
+  }
+  spawnNPC(walk) {
+    const [cx, cy] = this.pickArr(walk).split(",").map(Number), w = this.worldPos({ cx, cy });
+    const n = { id: ++this._npcId,
+      head: this.pickArr(this.headKeys), skin: this.pickArr(this.npcSkin), hair: this.pickArr(this.npcHair),
+      shirt: this.pickArr(this.npcShirt), cap: this.pickArr(this.npcCap), pants: this.pickArr(this.npcPants),
+      wx: w.x + this.rnd(-this.A * 0.35, this.A * 0.35), wy: w.y + this.rnd(-this.B * 0.35, this.B * 0.35),
+      tx: 0, ty: 0, state: "walk", task: "stroll", taskT: 0, phase: this.rnd(0, 6),
+      faceLeft: Math.random() < 0.5, spd: this.rnd(0.7, 1.25), emote: "", emoteUntil: 0, emoteT: this.rnd(2, 8) };
+    this.npcPickTarget(n, walk); this.npcs.push(n);
+  }
+  npcPickTarget(n, walk) {
+    walk = walk || this.npcWalkable(); if (!walk.length) { n.tx = n.wx; n.ty = n.wy; n.state = "task"; n.taskT = 2; return; }
+    const [cx, cy] = this.pickArr(walk).split(",").map(Number), w = this.worldPos({ cx, cy });
+    n.tx = w.x + this.rnd(-this.A * 0.4, this.A * 0.4); n.ty = w.y + this.rnd(-this.B * 0.4, this.B * 0.4); n.state = "walk";
+  }
+  updateNPCs(dt, t) {
+    if (this.paused) return; const sp = Math.max(1, this.speed);
+    for (const n of this.npcs) {
+      if (n.state === "walk") {
+        const dx = n.tx - n.wx, dy = n.ty - n.wy, d = Math.hypot(dx, dy);
+        if (d > 2) { const step = Math.min(d, this.npcSpeed * n.spd * dt * sp); n.wx += dx / d * step; n.wy += dy / d * step; if (dx < -0.3) n.faceLeft = true; else if (dx > 0.3) n.faceLeft = false; n.phase += dt * 7; }
+        else if (Math.random() < 0.3) { this.npcPickTarget(n); } // keep ambling
+        else { const c = this.worldToCell(n.wx, n.wy), e = (this._land || {})[c.cx + "," + c.cy], beach = e && e.beach;
+          n.task = this.pickArr(beach ? ["gaze", "fish", "chat", "stroll"] : ["gaze", "rest", "chat", "stroll"]);
+          if (n.task === "stroll") this.npcPickTarget(n);
+          else { n.state = "task"; n.taskT = this.rnd(2.5, 6.5); n.emoteT = this.rnd(0.3, 1.8); } }
+      } else { n.taskT -= dt * sp; n.phase += dt * (n.task === "rest" ? 1.4 : 2.4); if (n.taskT <= 0) this.npcPickTarget(n); }
+      n.emoteT -= dt;
+      if (n.emoteT <= 0) { if (n.state !== "walk") { n.emote = this.pickArr(this.npcEmotes[n.task] || this.npcEmotes.stroll); n.emoteUntil = t + 2.4; } n.emoteT = this.rnd(4, 11); }
+    }
+  }
+  drawNPC(ctx, x, y, n, t) {
+    const z = this.cam.z, sc = Math.max(0.8, Math.min(1.35, z)) * 0.9, walking = n.state === "walk";
+    const bob = walking ? Math.abs(Math.sin(n.phase)) * -1.5 * sc : Math.sin(n.phase) * (n.task === "rest" ? -0.4 : -0.6) * sc;
+    this.drawPerson(ctx, x, y, n, sc, n.phase, "think", n.faceLeft, bob);
+    if (n.task === "fish" && !walking) { const hx = x + (n.faceLeft ? -5 : 5) * z, hy = y - 9 * z, ex = hx + (n.faceLeft ? -11 : 11) * z, ey = hy + 9 * z;
+      ctx.strokeStyle = "#caa86a"; ctx.lineWidth = 1 * z; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(ex, ey); ctx.stroke(); this.ell(ctx, ex, ey + 1 * z, 1.1 * z, 0.7 * z, "#e7f0f2"); }
+    if (n.emote && t < n.emoteUntil && !walking) this.speech(ctx, x, y - 18 * sc + bob - 4 * z, n.emote);
   }
 
   /* ---------- camera ---------- */
@@ -511,6 +580,7 @@ export class LivingCity {
     const sorted = [...live].sort((a, b) => (a.cell.cx + a.cell.cy) - (b.cell.cx + b.cell.cy));
     const rl = []; for (const p of sorted) rl.push({ d: p.cell.cx + p.cell.cy, fn: () => this.drawParcel(ctx, p, t) });
     for (const p of this.projects) { if (p.civic || p.life <= 0.02) continue; for (const a of p.agents) { if (!a.commute) continue; const sc = this.project({ x: a.wx, y: a.wy }); rl.push({ d: a.wy / this.B + 0.45, fn: () => this.drawWalker(ctx, sc.x, sc.y, a, t) }); } }
+    for (const n of this.npcs) { const sc = this.project({ x: n.wx, y: n.wy }); rl.push({ d: n.wy / this.B + 0.4, fn: () => this.drawNPC(ctx, sc.x, sc.y, n, t) }); }
     rl.sort((u, v) => u.d - v.d); for (const it of rl) it.fn();
     this.drawHUD(ctx); }
 

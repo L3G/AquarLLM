@@ -164,6 +164,22 @@ it each frame, drawing only the cheap animated overlay (waves/boats/gulls/twinkl
 flood the renderer; and **batch activity-feed DOM** inserts via a DocumentFragment.
 Measured: 9 agents went from ~47% → and **56 agents now run at ~11%** renderer CPU.
 
+## v3.3 — townsfolk (ambient NPCs)
+
+The city felt empty when few agents were running. Added **ambient NPCs** (`client/src/city.ts`)
+that live in the *commons* — the park infill + beach ring — while the real coding agents
+work inside their named buildings. They're purely client-side and decoupled from the feed:
+**no name tag, no faction dot, no activity glyph, never counted in the HUD/feed**, so they
+read clearly as background townspeople, not agents. Each ambles between random walkable
+tiles and, on arrival, does a little leisure **task** — stroll, gaze (at the sea), rest,
+fish (beach only), or chat — with the occasional friendly speech bubble ("the sea…",
+"any fish?", "hello!"). Reuse the existing pixel-person sprite + `speech()`; drawn slightly
+smaller (0.9×) and added to the same depth-sorted list so they occlude correctly with
+buildings. Count **scales with open land** (`round(walkable * 0.5)`, clamped 3–18) and the
+walkable set is cached against the land signature. Cost is negligible — 10 agents + NPCs
+measured **5.7%** renderer CPU. Key methods: `ensureNPCs`/`spawnNPC`/`npcPickTarget`/
+`updateNPCs`/`drawNPC` + `worldToCell`/`npcWalkable`.
+
 ## Status: working v3 ✅ — desktop app
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`
