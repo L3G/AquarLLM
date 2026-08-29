@@ -74,11 +74,11 @@ function sessionsForCwd(cwd: string, n: number): string[] {
     .map((f) => f.id);
 }
 
-async function ping(agentId: string, project: string): Promise<void> {
+async function ping(agentId: string, project: string, cwd: string): Promise<void> {
   await fetch(`${HERMES}/ingest/presence`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ agentId, project, displayName: project }),
+    body: JSON.stringify({ agentId, project, displayName: project, cwd }),
   }).catch(() => {});
 }
 
@@ -113,7 +113,7 @@ async function tick(): Promise<void> {
     for (const id of sessionsForCwd(cwd, sessions)) {
       present.add(id);
       misses.set(id, 0);
-      await ping(id, basename(cwd));
+      await ping(id, basename(cwd), cwd);
     }
   }
 

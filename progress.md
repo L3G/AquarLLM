@@ -200,6 +200,171 @@ Richened the world (`client/src/city.ts`):
 
 Cost stayed cheap: 10 agents + parks + NPCs + POIs measured **~10% renderer CPU**.
 
+## v3.5 — Cozy Houses + time of day (Claude Design handoff)
+
+Ported the **"Cozy Houses"** art direction (`AquarLLM - Cozy Houses.dc.html`) into
+`client/src/city.ts`, wired to the live feed like every prior handoff. The two cozy worlds
+(**Harbor**, **Isles** — `style:"cozy"`) now render the design's **freestanding gable
+cottages**; the dark worlds (Cyber/Orbital/Silicon) keep their sci-fi dollhouse boxes.
+
+**Freestanding cottages (not dollhouses).** First attempt only re-skinned the existing
+*dollhouse* (open-front room) with a back-peaked roof — that's NOT the design, which has
+**closed cottages with citizens standing in the yard**. So cozy non-civic projects now take
+a separate path: `drawParcel` early-returns to **`drawCozyParcel`**, which draws the design's
+**`drawCottage`** — a whole gable house (plinth, timber walls, **door + two cross-frame
+windows with flower boxes** on the gable end, shingled roof + ridge, **chimney + smoke**,
+plus **dormer / porch** variants picked by the project-name hash). Ported verbatim from the
+design with its own iso projector (`Ucozy`/`mkPCozy`) + helpers (`drawChimneyCozy`,
+`drawDormerCozy`, `drawSmoke`, `line`) and palette (`cozyPal`/`cozyWalls`/`cozyRoofs`).
+- **Yard + village.** Each cottage sits on a **grass plot** (cozy occupied cells are grassed,
+  not paved — `drawGround`) with **tree, hedge, flower-bed, lantern** dressing
+  (`drawTreeCozy`/`drawHedge`/`drawFlowerBed`/`drawLanternCozy`). The town of project-plots
+  reads as the design's **neighbourhood of homes**; civic git/build **yards** stay flat-roofed
+  and visually distinct.
+- **Citizens in the yard.** Agents are placed in the **front yard** (`yardAnchors`/`yardBeds`
+  via `retarget`, gated on `isCozy`) instead of inside, so the closed house never hides them;
+  idle cozy citizens just stand with a Zzz (`drawWalker` skips the bed for cozy). Activity
+  glyph/speech still rides above each.
+- **Work-house vs quiet home.** Lit windows + smoking chimney only when a project has working
+  (non-idle) agents → the design legend's "glowing windows = active · chimney smoke = busy".
+- **Time of day** (`todState` + `todParams`, default **dusk**; new ☀/◑/☾ buttons top-centre,
+  wired in `main.ts`). Day/Dusk/Night re-light the cozy worlds: sky gradient (in the cached
+  static bg — `todState` is in the bg cache key), **stars + moon**, ambient shade (`amb` →
+  walls/roof/windows/smoke/lanterns) and grass shade (`grassF`). No-op on the dark worlds.
+
+Verified with headless-Chrome screenshots (same-origin harness feeding fake agents, plus the
+live app): a single cottage at day/dusk/night, a 6-cottage village with dormer/porch variety,
+wide town shots, and a Cyber regression check. Build clean.
+
+### v3.5a — organic village layout (design 02·A "organic village")
+
+Follow-up to feedback ("villages aren't laid out like the design — still one house per
+tile"). The user picked the design's **organic village**, so the cell-packing layout engine
+was replaced:
+- **Ring placement.** `placeCell` no longer packs a blob toward the centroid — it fills
+  **concentric diamond rings** (`ringCells`) around a **reserved central green** (r≤1 = the
+  git/build civic yards + the well), dropping each new cottage on the free ring cell
+  **farthest from the others** so homes spread evenly around the ring. `computeLand` then
+  grasses the empty interior → a clear green at the heart.
+- **Well + radial lanes.** A stone **well** (`drawWell`) sits at `villageCenter()` (centroid
+  of occupied cells), and worn **dirt lanes** (`pathStrip`) radiate from it to every cottage
+  — drawn on the ground in `drawTown`, the well depth-sorted into the scene.
+- **Organic jitter.** `cottagePos(p)` still nudges each cottage outward + a stable per-name
+  jitter; draw position, yard citizens, and the **depth sort** all use it. Idle projects
+  render a **dimmed cottage + Zzz** (`drawCozyDormant`/`cottageOpts`), not the old grey box.
+
+Verified via headless-Chrome: n=3 / 8 / 14 towns (single + double ring), night, and the live
+app — homes ring the green, well + lanes centre it.
+
+Heads-up for future agents: ring placement is global (all worlds), so dark worlds also
+cluster in rings now (fine). And Vite HMR does NOT re-instantiate the running `LivingCity`
+(the rAF loop keeps the old instance) — a city.ts change needs a **full page reload** to
+take; an open tab can show stale rendering.
+
+## v3.6 — villages (repo) + Ploutos economy + trade
+
+The town now reads as a set of **villages**, where a *village = a git repo*. Cottages
+whose folders share a repo cluster together (`placeCell` drops a repo's later cottages on a
+free cell **adjacent** to its repo-mates), wear a faint **palisade border** tracing the
+cluster (`drawVillageBorders`), and fly a **banner** (`drawVillageBanners`/`drawBanner`)
+with the repo name, an agent count, a **tier** (Hamlet→Metropolis, from history+size) and a
+**git stat line** (`Nc · age · contributors`). A village's solo cottage drops its own
+plot-label so the banner is the only sign (no dupe).
+
+- **Clio** (`server/clio.ts`, muse of history): an async, cached git inspector. `resolve(cwd)`
+  returns a repo id (the git toplevel path) instantly — cached, or `undefined` while it
+  shells out to `git rev-parse / rev-list / log --max-parents=0 / shortlog / ls-files` to
+  measure commits, age, contributors, files (`RepoInfo`). Never blocks the hook path; on
+  completion it relabels agents + pushes a `{type:"repos"}` WS message. Wired into both
+  servers (`server/index.ts`, `app/src/server.ts`); `normalize.ts` + `normalize-grok.ts`
+  now forward the full `cwd`; `AgentEvent`/`AgentState` gained `cwd`/`repo`; Hypnos (app +
+  `adapters/presence`) reports `cwd` so even sleeping sessions get a village. Sim/non-git
+  folders have no `RepoInfo` → the client **synthesizes** playful stats from the name hash.
+- **Ploutos** (the economy, in `city.ts`): live activity mints resources into the village
+  stockpile — **read→lore, edit→timber, run→iron, search→spice, think/commit→grain**
+  (`updateEconomy`, ~1/sec per active agent, soft cap 130, slow decay). Surplus villages
+  send **trade caravans** (`attemptTrade`/`spawnCaravan`/`updateCaravans`/`drawCaravan`) —
+  a trader hauling a resource-tinted sack walks the largest surplus→deficit gap and delivers
+  on arrival (reuses `gridPath` + front-corner waypoints). Banners show the top-resource
+  pips; the HUD gains a **STORES** strip (global totals) + a live caravan count; the left
+  legend gains a **VILLAGE RESOURCES** key (`activitylog.ts` `RES_STYLE`).
+
+Wire: `client/src/net.ts` + `main.ts` handle the `repos` message → `city.setRepos`. Verified
+via real-time CDP screenshots (the embedded app server + sim): repos resolved with real git
+stats (e.g. this repo = 21c/4d/37f → Town), `eos-monorepo` grouped `kernel`+`eos-stack`
+under one banner+border, resources accrued, and a "↦ spice" caravan delivered between
+villages. Client + Electron bundles clean. NB Chrome `--virtual-time-budget` stalls on the
+open WebSocket (economy barely advances) — use real-time CDP capture to see trade.
+
+## v3.7 — a village = a repo (footprint, houses scaled to size, residents & roads)
+
+Reworked the layout so **the repo itself is the village** (not one cottage per folder).
+A *village* is now the placed/drawn entity in `city.ts` (`this.villages` Map; `this.projects`
+= civics + villages):
+
+- **Footprint scaled to size.** Each village owns a **diamond of cells** (`diamond`,
+  `placeVillage`, `villageRadius`) sized to its tier; anchors are spread so footprints +
+  a 1-cell road gap never collide, yet stay close → a connected town. `createVillage`
+  places it and marks `this.occ`; emptied villages go dormant then prune after a grace
+  period (`PRUNE_GRACE`).
+- **Decorative houses scaled to size.** `makeHouses` scatters `houseCount(v)` houses
+  (tier → `houseTiers` [2,4,7,11,16] + jitter, cap 22) across the footprint, leaving a
+  central green; bigger repos literally build bigger villages. `drawHouse`/`houseOpts`
+  reuse the cozy `drawCottage` (Harbor/Isles) or a `drawDarkHouse` box (Cyber/Orbital/
+  Silicon); some windows glow when the repo is busy. Houses are unlabelled — the banner
+  names the village.
+- **Villagers = one per active agent.** Agents are world-coord wanderers of their village
+  (`updateVillager`/`villagerRetarget`, grouped by `repo || project` in `syncAgents`),
+  drawn in the depth-sorted render list with their activity glyph/speech.
+- **Resident NPCs live in the repo.** `ensureResidents`/`spawnResident`/`updateResidents`
+  add ambient dwellers per village (count ~0.7×houses), wandering the footprint and
+  lingering at houses — distinct from the existing park/shore townsfolk (`this.npcs`).
+- **Roads link the villages.** `buildRoads` builds a nearest-neighbour edge network between
+  anchors; `drawRoads` lays a bed + surface + dashed centre strip along `gridPath`. Cozy
+  worlds also draw the green's **well** + radial lanes to each house. Trade caravans run
+  the same gaps.
+- **Economy/HUD/banners** adapted to the village-as-entity (`updateEconomy`/`villageActive`
+  iterate `v.agents`; borders/banners key off `v.life`/`v.houses`). HUD relabelled
+  **VILLAGES** with per-row tier + agent count; civic git/build yards retired.
+
+**Depth fix + hover tooltips (follow-up):** walkers (agents/residents/NPCs/caravans) had a
+large render-order bias left over from whole-parcel drawing, which made a character render
+*over* any house it was within ~20 world-units behind. Now everything sorts by feet (`wy/B`)
+with only a hair of forward bias, so characters occlude correctly among the houses. Added
+**hover tooltips**: `drawTown` collects screen-space hit-boxes (`_hov`) for every house,
+villager, resident, NPC and caravan; a `pointermove` listener records `_hoverPos`;
+`drawHover` picks the front-most hit and draws a labelled plaque — houses → "*repo* · house ·
+*tier*", agents → "*Kind* agent / *activity* · *repo*", residents → "Villager / resident of
+*repo*", caravans → "Trade caravan / hauling *resource*". Cursor switches to `help` over a
+hit. Verified via CDP (drove the cursor onto a house/agent/resident — all three plaques
+correct, occlusion clean).
+
+**Houses = portions of the repo + Harbor-only (follow-up 2):** each house now represents a
+*top-level folder of the repo*. **Clio** gained `dirs` (`git ls-tree -d --name-only HEAD`,
+dotfolders skipped) on `RepoInfo` (`shared/logos.ts`); the client (`portionsFor`/
+`assignPortions`) labels each house with a real folder (cycling if there are more houses than
+folders) or a synthetic one (`portionPool`) for non-git/sim repos, refreshed when Clio's dirs
+arrive. The hover tooltip over a house now reads "*folder*/ — part of *repo* · *tier*"
+(e.g. "app/ — part of AquarLLM · Town"), answering "what portion is this / why this repo".
+The world switcher was reduced to **Harbor only** (other worlds removed from `index.html`;
+the dark-world rendering paths remain in `city.ts`, just unreachable from the UI). Verified
+via CDP: injected a real-cwd agent → AquarLLM village resolved with real dirs
+`[adapters, app, client, server, shared, sim]` mapped onto its houses, tooltip correct.
+
+**Spacing (follow-up 3):** villages were packing too tightly. Widened the inter-village gap
+to `VILLAGE_GAP = 3` empty cells (`placeVillage`/`footprintClear`) so there's clear parkland +
+road between clusters, and gave larger repos bigger footprints (`villageRadius` now goes to
+r=4 for the biggest) with houses spread proportionally wider (`makeHouses` `maxR`/min-spacing
+bumped) — so a big repo grows in *area*, not just density. Verified via CDP: a Metropolis +
+several Cities now read as distinct, separated villages linked by roads.
+
+Synth (non-git/sim) stats were dialled down so synthetic villages span Hamlet→City (real
+Clio repos still drive the tier). Verified via real-time CDP: four repo-villages
+(eos-monorepo Metropolis, platform, rustlang, aquarllm Town) with size-scaled house
+clusters, palisade borders, wells + radial lanes, **roads between villages**, villagers
+with speech bubbles, resident NPCs across the world, and a live caravan; dark-world box
+houses confirmed. Client bundle clean.
+
 ## Status: working v3 ✅ — desktop app
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`

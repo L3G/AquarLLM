@@ -36,7 +36,7 @@ async function init(): Promise<void> {
   hypnos = startHypnos({
     projectsDir: join(homedir(), ".claude", "projects"),
     grokSessionsFile: join(homedir(), ".grok", "active_sessions.json"),
-    report: (id, proj, kind) => { if (server!.world.presence(id, proj, proj, Date.now(), kind)) server!.broadcast(); },
+    report: (id, proj, kind, cwd) => { if (server!.world.presence(id, proj, proj, Date.now(), kind, cwd, server!.resolveRepo(cwd))) server!.broadcast(); },
     leave: (id) => { if (server!.world.apply({ agentKind: "claude", agentId: id, activity: "left", ts: Date.now() })) server!.broadcast(); },
   });
   try { if (!hooksStatus(PORT).installed) installHooks(PORT); } catch (e) { console.error("hook install failed:", e); }

@@ -6,8 +6,9 @@
  *   GET  /healthz            liveness + agent count
  */
 import type { Server, ServerWebSocket } from "bun";
-import { type AgentEvent, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
+import { type AgentEvent, type AgentState, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
 import { World } from "./world.ts";
+import { Clio } from "./clio.ts";
 import { normalizeClaudeHook } from "./normalize.ts";
 import { normalizeGrokHook } from "./normalize-grok.ts";
 
@@ -18,6 +19,7 @@ const REAP_AFTER_MS = Number(process.env.REAP_AFTER_MS ?? 6 * 60 * 60 * 1000); /
 const WORLD_TOPIC = "world";
 
 const world = new World();
+const clio = new Clio(); // resolves each cwd to a repo (village) + its history/size
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -25,9 +27,21 @@ const CORS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function broadcast(server: Server): void {
+function broadcast(server: Server<undefined>): void {
   server.publish(WORLD_TOPIC, JSON.stringify(world.snapshot()));
 }
+
+function broadcastRepos(server: Server<undefined>): void {
+  server.publish(WORLD_TOPIC, JSON.stringify({ type: "repos", repos: clio.list() }));
+}
+
+// When Clio finishes inspecting a folder, the repo id wasn't known when the event first
+// arrived — relabel those agents and push the new village metadata.
+clio.onUpdate(() => {
+  world.relabelRepos((cwd) => clio.resolve(cwd));
+  broadcast(server);
+  broadcastRepos(server);
+});
 
 /** Build an activity-feed line if this event is a meaningful action (vs. a no-op repeat). */
 function makeLog(ev: AgentEvent, prev: AgentState | undefined): LogEntry | null {
@@ -45,7 +59,8 @@ function makeLog(ev: AgentEvent, prev: AgentState | undefined): LogEntry | null 
 }
 
 /** Apply an event, append a log line if it's an action, and broadcast both. */
-function record(server: Server, ev: AgentEvent): void {
+function record(server: Server<undefined>, ev: AgentEvent): void {
+  if (ev.cwd && !ev.repo) ev.repo = clio.resolve(ev.cwd); // attach the village id (cached) if known
   const prev = world.peek(ev.agentId);
   const entry = makeLog(ev, prev);
   const changed = world.apply(ev);
@@ -110,8 +125,9 @@ const server = Bun.serve({
     if (req.method === "POST" && url.pathname === "/ingest/presence") {
       // Heartbeat from Hypnos: an open instance exists (sleeping unless hooks say otherwise).
       try {
-        const p = (await req.json()) as { agentId?: string; project?: string; displayName?: string };
-        if (p?.agentId && world.presence(p.agentId, p.project, p.displayName, Date.now())) {
+        const p = (await req.json()) as { agentId?: string; project?: string; displayName?: string; cwd?: string };
+        const repo = clio.resolve(p?.cwd);
+        if (p?.agentId && world.presence(p.agentId, p.project, p.displayName, Date.now(), "claude", p.cwd, repo)) {
           broadcast(server);
         }
       } catch {
@@ -132,6 +148,7 @@ const server = Bun.serve({
     open(ws: ServerWebSocket) {
       ws.subscribe(WORLD_TOPIC);
       ws.send(JSON.stringify(world.snapshot()));
+      ws.send(JSON.stringify({ type: "repos", repos: clio.list() }));
       ws.send(JSON.stringify({ type: "log", entries: world.recentLog() }));
     },
     close(ws: ServerWebSocket) {

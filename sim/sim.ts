@@ -21,6 +21,12 @@ const NAMES = [
 ];
 const KINDS: AgentKind[] = ["claude", "codex", "grok", "custom"];
 const PROJECTS = ["newworld", "aquarllm", "eos-stack", "kernel", "webapp", "rustlang", "infra"];
+// Some folders share a repo → those cottages cluster into one village (and a couple of
+// villages hold 2 folders, so the demo shows multi-house villages + cross-village trade).
+const REPO_OF: Record<string, string> = {
+  "eos-stack": "eos-monorepo", kernel: "eos-monorepo",
+  webapp: "platform", infra: "platform",
+};
 const WORK: Activity[] = ["thinking", "reading", "editing", "running", "searching"];
 
 const pick = <T>(a: T[]): T => a[Math.floor(Math.random() * a.length)]!;
@@ -31,6 +37,7 @@ interface Persona {
   agentKind: AgentKind;
   displayName: string;
   project: string;
+  repo: string; // village id (a real repo id from Clio in production; here a demo grouping)
   parentId?: string;
   ttl?: number; // remaining ticks for subagents
 }
@@ -70,11 +77,13 @@ function detailFor(activity: Activity): string | undefined {
 }
 
 function newPersona(): Persona {
+  const project = pick(PROJECTS);
   return {
     agentId: crypto.randomUUID().slice(0, 8),
     agentKind: pick(KINDS),
     displayName: NAMES[nameIdx++ % NAMES.length]!,
-    project: pick(PROJECTS),
+    project,
+    repo: REPO_OF[project] ?? project,
   };
 }
 
@@ -85,6 +94,7 @@ async function transition(p: Persona, activity: Activity): Promise<void> {
     displayName: p.displayName,
     activity,
     project: p.project,
+    repo: p.repo,
     parentId: p.parentId,
     detail: detailFor(activity),
   });
@@ -96,6 +106,7 @@ async function spawnSubagent(parent: Persona): Promise<void> {
     agentKind: parent.agentKind,
     displayName: `${parent.displayName}·sub`,
     project: parent.project,
+    repo: parent.repo,
     parentId: parent.agentId,
     ttl: 3 + Math.floor(Math.random() * 4),
   };

@@ -18,11 +18,16 @@ city.start();
 
 // Activity feed + legend (left panel)
 const log = new ActivityLog(document.getElementById("lg-list")!);
-renderLegend(document.getElementById("lg-acts")!, document.getElementById("lg-factions")!);
+renderLegend(
+  document.getElementById("lg-acts")!,
+  document.getElementById("lg-factions")!,
+  document.getElementById("lg-res")!,
+);
 
 connect(HERMES_WS, {
   snapshot: (snap: WorldSnapshot) => city.syncAgents(snap.agents),
   log: (entries) => log.add(entries),
+  repos: (repos) => city.setRepos(repos),
 });
 
 // Show/hide the left panel; reserve gutter so the city re-centres between the panels.
@@ -55,3 +60,16 @@ for (const b of buttons) {
   });
 }
 refresh();
+
+// Time-of-day switcher (Cozy Houses) — re-lights the cozy worlds (Harbor / Isles).
+const todButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-tod]")];
+function refreshTod(): void {
+  for (const b of todButtons) b.classList.toggle("on", b.dataset.tod === city.timeOfDay);
+}
+for (const b of todButtons) {
+  b.addEventListener("click", () => {
+    city.setTimeOfDay(b.dataset.tod!);
+    refreshTod();
+  });
+}
+refreshTod();

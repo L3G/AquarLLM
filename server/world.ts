@@ -57,10 +57,30 @@ export class World {
       district: ACTIVITY_TO_DISTRICT[event.activity],
       detail: event.detail ?? keepDetail,
       project: event.project ?? prev?.project,
+      cwd: event.cwd ?? prev?.cwd,
+      repo: event.repo ?? prev?.repo,
       parentId: event.parentId ?? prev?.parentId,
       lastUpdate: now,
     });
     return true;
+  }
+
+  /**
+   * Resolve village (repo) ids for any agents that have a cwd but no repo yet. Called when
+   * Clio finishes inspecting a folder (its id wasn't known when the event first arrived).
+   * Returns true if any agent's repo changed (worth re-broadcasting).
+   */
+  relabelRepos(resolve: (cwd: string | undefined) => string | undefined): boolean {
+    let changed = false;
+    for (const a of this.agents.values()) {
+      if (!a.cwd) continue;
+      const repo = resolve(a.cwd);
+      if (repo && repo !== a.repo) {
+        a.repo = repo;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   /**
@@ -75,11 +95,15 @@ export class World {
     displayName: string | undefined,
     now: number,
     kind: AgentKind = "claude",
+    cwd?: string,
+    repo?: string,
   ): boolean {
     const prev = this.agents.get(agentId);
     if (prev) {
       prev.lastUpdate = now; // keep the open session alive; let hooks drive its activity
       if (prev.activity === "idle" && project) prev.project = project;
+      if (cwd && !prev.cwd) prev.cwd = cwd;
+      if (repo && !prev.repo) prev.repo = repo;
       return false;
     }
     this.agents.set(agentId, {
@@ -89,6 +113,8 @@ export class World {
       activity: "idle",
       district: ACTIVITY_TO_DISTRICT.idle,
       project,
+      cwd,
+      repo,
       lastUpdate: now,
     });
     return true;

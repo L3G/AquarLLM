@@ -18,7 +18,7 @@ export interface HypnosHandle { stop(): void; supported: boolean; }
 interface HypnosOpts {
   projectsDir: string; // ~/.claude/projects
   grokSessionsFile?: string; // ~/.grok/active_sessions.json
-  report: (agentId: string, project: string, kind: AgentKind) => void;
+  report: (agentId: string, project: string, kind: AgentKind, cwd: string) => void;
   leave: (agentId: string) => void;
   tickMs?: number;
 }
@@ -102,11 +102,11 @@ export function startHypnos(opts: HypnosOpts): HypnosHandle {
       }
       for (const [cwd, f] of folders) {
         const n = f.terminal > 0 ? f.terminal : 1;
-        for (const id of sessionsForCwd(cwd, n)) { present.add(id); misses.set(id, 0); opts.report(id, base(cwd), "claude"); }
+        for (const id of sessionsForCwd(cwd, n)) { present.add(id); misses.set(id, 0); opts.report(id, base(cwd), "claude", cwd); }
       }
     }
 
-    for (const s of grokSessions()) { present.add(s.id); misses.set(s.id, 0); opts.report(s.id, base(s.cwd), "grok"); }
+    for (const s of grokSessions()) { present.add(s.id); misses.set(s.id, 0); opts.report(s.id, base(s.cwd), "grok", s.cwd); }
 
     for (const [id, miss] of misses) {
       if (present.has(id)) continue;

@@ -40,6 +40,19 @@
       }
       #worlds button.on { background: #1f2630; color: #e7d9bd; border-color: #5fb0ab; }
 
+      #tod {
+        position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
+        display: flex; align-items: center; gap: 8px;
+      }
+      #tod .tod-label { font: 700 9px "JetBrains Mono", monospace; letter-spacing: 1.5px; color: #5b636f; }
+      #tod button {
+        cursor: pointer; font: 700 10.5px "JetBrains Mono", monospace;
+        padding: 5px 10px; border-radius: 4px;
+        background: #13161c; color: #8b93a0; border: 1px solid #272d38;
+        transition: background 0.12s, border-color 0.12s, color 0.12s;
+      }
+      #tod button.on { background: #1f2630; color: #e7d9bd; border-color: #5fb0ab; }
+
       /* Left activity panel */
       #log {
         position: fixed; left: 14px; top: 84px; bottom: 40px; width: 300px; z-index: 15;
@@ -103,10 +116,13 @@
     </header>
     <div id="worlds">
       <button data-world="harbor">Harbor</button>
-      <button data-world="cyber">Cyber</button>
-      <button data-world="space">Orbital</button>
-      <button data-world="fantasy">Isles</button>
-      <button data-world="silicon">Silicon</button>
+    </div>
+
+    <div id="tod">
+      <span class="tod-label">TIME OF DAY</span>
+      <button data-tod="day">☀ Day</button>
+      <button data-tod="dusk">◑ Dusk</button>
+      <button data-tod="night">☾ Night</button>
     </div>
 
     <button id="lg-show" hidden>▸ Activity</button>
@@ -116,6 +132,8 @@
       <div class="lg-legend">
         <div class="lg-legend-title">WHAT THEY'RE DOING</div>
         <div class="lg-keys" id="lg-acts"></div>
+        <div class="lg-legend-title">VILLAGE RESOURCES</div>
+        <div class="lg-keys" id="lg-res"></div>
         <div class="lg-legend-title">AGENTS</div>
         <div class="lg-keys" id="lg-factions"></div>
       </div>

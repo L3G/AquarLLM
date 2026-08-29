@@ -113,6 +113,10 @@ export interface AgentEvent {
   detail?: string;
   /** Project context, typically basename(cwd). */
   project?: string;
+  /** Full working directory — Clio resolves this to a repo (village) id. Local-only. */
+  cwd?: string;
+  /** Repo (village) id this agent belongs to. Set by Hermes via Clio, or by a producer. */
+  repo?: string;
   /** For subagents: the parent agentId (rendered as a tethered companion). */
   parentId?: string;
   /** Epoch ms. Producers stamp this; Hermes fills it if missing. */
@@ -128,6 +132,10 @@ export interface AgentState {
   district: District;
   detail?: string;
   project?: string;
+  /** Full working directory (local-only; used to resolve the village). */
+  cwd?: string;
+  /** Repo (village) id — folders sharing a repo cluster into one village. */
+  repo?: string;
   parentId?: string;
   /** Epoch ms of the last event applied. */
   lastUpdate: number;
@@ -137,6 +145,37 @@ export interface AgentState {
 export interface WorldSnapshot {
   type: "snapshot";
   agents: AgentState[];
+}
+
+/**
+ * A repo (village) Clio has inspected. Drives the village's scale/tier (history + size)
+ * and seeds the Ploutos economy. `real:false` means the stats were synthesized (no git).
+ */
+export interface RepoInfo {
+  /** Stable village id — the git toplevel path (or the project name when no git). */
+  id: string;
+  /** Display name — the repo's folder basename. */
+  name: string;
+  /** Absolute git toplevel (real repos only). */
+  root?: string;
+  /** Commit count on HEAD. */
+  commits: number;
+  /** Days since the first commit. */
+  ageDays: number;
+  /** Distinct commit authors. */
+  contributors: number;
+  /** Tracked file count (a cheap size proxy). */
+  files: number;
+  /** Top-level directories of the repo (each becomes a labelled house in the village). */
+  dirs?: string[];
+  /** True when measured from a real git repo, false when synthesized. */
+  real: boolean;
+}
+
+/** Repo (village) metadata — sent on connect and whenever Clio learns/refreshes a repo. */
+export interface RepoMessage {
+  type: "repos";
+  repos: RepoInfo[];
 }
 
 /** One line in the activity feed — a discrete thing an agent did. */
@@ -157,7 +196,7 @@ export interface LogMessage {
 }
 
 /** Discriminated union of everything Hermes sends over the WebSocket. */
-export type ServerMessage = WorldSnapshot | LogMessage;
+export type ServerMessage = WorldSnapshot | LogMessage | RepoMessage;
 
 /** Build a friendly default display name from kind + id. */
 export function defaultDisplayName(kind: AgentKind, agentId: string): string {

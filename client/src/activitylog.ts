@@ -16,6 +16,15 @@ export const ACT_STYLE: Record<string, [string, string, string]> = {
   spawning: ["spawning", "#9b7cf0", "launched a helper"],
 };
 
+/** Village resource → [label, colour, what mints it] — the Ploutos economy (city.ts). */
+export const RES_STYLE: Record<string, [string, string, string]> = {
+  timber: ["timber", "#b5793f", "from editing"],
+  iron: ["iron", "#9aa3b2", "from running"],
+  lore: ["lore", "#7c9fe0", "from reading"],
+  spice: ["spice", "#e07a4a", "from searching"],
+  grain: ["grain", "#e0c24a", "from thinking"],
+};
+
 /** Agent kind → [label, colour]. */
 export const KIND_STYLE: Record<string, [string, string]> = {
   claude: ["Claude", "#d97757"],
@@ -65,8 +74,8 @@ export class ActivityLog {
   }
 }
 
-/** Build the static legend into the activities + agents containers. */
-export function renderLegend(actsEl: HTMLElement, factionsEl: HTMLElement): void {
+/** Build the static legend into the activities + resources + agents containers. */
+export function renderLegend(actsEl: HTMLElement, factionsEl: HTMLElement, resEl?: HTMLElement): void {
   const order = ["reading", "editing", "running", "searching", "thinking", "waiting", "idle", "error"];
   actsEl.innerHTML = order
     .map((k) => {
@@ -79,6 +88,16 @@ export function renderLegend(actsEl: HTMLElement, factionsEl: HTMLElement): void
       );
     })
     .join("");
+  if (resEl) {
+    resEl.innerHTML = Object.values(RES_STYLE)
+      .map(([label, color, where]) =>
+        `<div class="lg-key" title="${where}">` +
+        `<span class="lg-sw" style="background:${color}"></span>` +
+        `<span class="lg-kl">${label}</span>` +
+        `<span class="lg-kw">${where}</span></div>`,
+      )
+      .join("");
+  }
   factionsEl.innerHTML = Object.values(KIND_STYLE)
     .map(([label, color]) =>
       `<div class="lg-key"><span class="lg-dot" style="background:${color}"></span>` +

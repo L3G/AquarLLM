@@ -74,7 +74,8 @@ export function normalizeClaudeHook(raw: ClaudeHook): AgentEvent | null {
   const ts = Date.now();
   // Label main agents by their working folder; subagents keep their type name.
   const displayName = isSub ? undefined : project;
-  const base = { agentKind: "claude" as const, agentId, parentId, project, displayName, ts };
+  // Keep the full cwd so Clio can resolve the repo (village); project stays the basename.
+  const base = { agentKind: "claude" as const, agentId, parentId, project, cwd: raw.cwd, displayName, ts };
 
   switch (ev) {
     case "SessionStart":

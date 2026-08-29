@@ -10,6 +10,7 @@ import { join, extname, normalize, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { type AgentEvent, type AgentState, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
 import { World } from "../../server/world.ts";
+import { Clio } from "../../server/clio.ts";
 import { normalizeClaudeHook } from "../../server/normalize.ts";
 import { normalizeGrokHook } from "../../server/normalize-grok.ts";
 
@@ -29,6 +30,8 @@ export interface ServerHandle {
   world: World;
   port: number;
   broadcast(): void;
+  /** Village (repo) id for a cwd, cached — for presence from the in-process Hypnos. */
+  resolveRepo(cwd: string | undefined): string | undefined;
   close(): void;
 }
 
@@ -54,22 +57,29 @@ function makeLog(ev: AgentEvent, prev: AgentState | undefined): LogEntry | null 
 
 export function startServer(opts: { port: number; clientDir: string }): Promise<ServerHandle> {
   const world = new World();
+  const clio = new Clio(); // resolves each cwd to a repo (village) + its history/size
   const clients = new Set<WebSocket>();
   const send = (msg: string) => { for (const c of clients) if (c.readyState === 1) c.send(msg); };
   // Coalesce snapshots + batch log events to ~12.5Hz so a burst of agent activity
   // doesn't flood every client (and the renderer thread) with per-event work.
   let snapDirty = false;
+  let reposDirty = false;
   let pendingLog: LogEntry[] = [];
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   const flush = () => {
     flushTimer = null;
     if (pendingLog.length) { send(JSON.stringify({ type: "log", entries: pendingLog })); pendingLog = []; }
+    if (reposDirty) { reposDirty = false; send(JSON.stringify({ type: "repos", repos: clio.list() })); }
     if (snapDirty) { snapDirty = false; send(JSON.stringify(world.snapshot())); }
   };
   const schedule = () => { if (!flushTimer) flushTimer = setTimeout(flush, 80); };
   const broadcast = () => { snapDirty = true; schedule(); };
 
+  // Clio learned/refreshed a repo: relabel agents that now have a known village + push it.
+  clio.onUpdate(() => { world.relabelRepos((cwd) => clio.resolve(cwd)); snapDirty = true; reposDirty = true; schedule(); });
+
   const record = (ev: AgentEvent) => {
+    if (ev.cwd && !ev.repo) ev.repo = clio.resolve(ev.cwd); // attach the village id (cached) if known
     const prev = world.peek(ev.agentId);
     const entry = makeLog(ev, prev);
     const changed = world.apply(ev);
@@ -115,7 +125,7 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
       res.writeHead(200, CORS).end("ok"); return;
     }
     if (req.method === "POST" && path === "/ingest/presence") {
-      try { const p = JSON.parse(await readBody(req)); if (p?.agentId && world.presence(p.agentId, p.project, p.displayName, Date.now())) broadcast(); } catch { /* ignore */ }
+      try { const p = JSON.parse(await readBody(req)); if (p?.agentId && world.presence(p.agentId, p.project, p.displayName, Date.now(), "claude", p.cwd, clio.resolve(p.cwd))) broadcast(); } catch { /* ignore */ }
       res.writeHead(200, CORS).end("ok"); return;
     }
 
@@ -128,6 +138,7 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
     wss.handleUpgrade(req, socket, head, (ws) => {
       clients.add(ws);
       ws.send(JSON.stringify(world.snapshot()));
+      ws.send(JSON.stringify({ type: "repos", repos: clio.list() }));
       ws.send(JSON.stringify({ type: "log", entries: world.recentLog() }));
       ws.on("close", () => clients.delete(ws));
       ws.on("error", () => clients.delete(ws));
@@ -139,6 +150,7 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
   return new Promise((resolve) => {
     httpServer.listen(opts.port, () => resolve({
       world, port: opts.port, broadcast,
+      resolveRepo: (cwd) => clio.resolve(cwd),
       close: () => { clearInterval(reaper); if (flushTimer) clearTimeout(flushTimer); for (const c of clients) c.close(); wss.close(); httpServer.close(); },
     }));
   });

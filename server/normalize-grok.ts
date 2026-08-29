@@ -65,8 +65,9 @@ export function normalizeGrokHook(raw: GrokHook): AgentEvent | null {
   const ev = String(evRaw).toLowerCase().replace(/[_\-\s]/g, "");
   const tool = raw.toolName ?? raw.tool_name;
   const input = (raw.toolInput ?? raw.tool_input ?? {}) as Record<string, unknown>;
-  const project = basename(raw.workspaceRoot ?? raw.cwd);
-  const base = { agentKind: "grok" as const, agentId: sessionId, project, ts: Date.now() };
+  const cwd = raw.workspaceRoot ?? raw.cwd; // workspaceRoot is usually the repo root already
+  const project = basename(cwd);
+  const base = { agentKind: "grok" as const, agentId: sessionId, project, cwd, ts: Date.now() };
 
   switch (ev) {
     case "sessionstart":
