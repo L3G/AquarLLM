@@ -118,15 +118,15 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
     }
     if (req.method === "POST" && path === "/ingest/claude-hook") {
       try { const ev = normalizeClaudeHook(JSON.parse(await readBody(req))); if (ev) record(ev); } catch { /* ignore */ }
-      res.writeHead(200, CORS).end("ok"); return;
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ continue: true })); return;
     }
     if (req.method === "POST" && path === "/ingest/grok-hook") {
       try { const ev = normalizeGrokHook(JSON.parse(await readBody(req))); if (ev) record(ev); } catch { /* ignore */ }
-      res.writeHead(200, CORS).end("ok"); return;
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ continue: true })); return;
     }
     if (req.method === "POST" && path === "/ingest/presence") {
       try { const p = JSON.parse(await readBody(req)); if (p?.agentId && world.presence(p.agentId, p.project, p.displayName, Date.now(), "claude", p.cwd, clio.resolve(p.cwd))) broadcast(); } catch { /* ignore */ }
-      res.writeHead(200, CORS).end("ok"); return;
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ continue: true })); return;
     }
 
     serveStatic(path, res);

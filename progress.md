@@ -365,6 +365,34 @@ clusters, palisade borders, wells + radial lanes, **roads between villages**, vi
 with speech bubbles, resident NPCs across the world, and a live caravan; dark-world box
 houses confirmed. Client bundle clean.
 
+## v3.7a — hook endpoints must answer JSON
+
+Fix for a bug that only ever fired for *other people*. The hook ingest endpoints answered
+with the plain-text body `ok`; Claude Code validates `type:"http"` hook responses and
+requires JSON, so it raised
+
+```
+HTTP hook must return JSON, but got non-JSON response body: ok
+```
+
+on **every** PreToolUse / UserPromptSubmit / Stop — an error per tool call for the whole
+session. Events still recorded (the handler records before responding), so the city looked
+fine while the transcript filled with errors.
+
+Invisible locally because the two install paths differ: the dev adapter
+(`adapters/claude-code/hooks.settings.json`) uses `type:"command"` curl hooks that pipe the
+body to `/dev/null` and never validate it, while the desktop app installs `type:"http"`
+(`app/src/hooks.ts:16`) — which does. Anyone following the README's "easiest way: the
+desktop app" hit it; anyone running the dev hooks never would.
+
+Both servers now return `{"continue":true}` with `Content-Type: application/json` from
+`/ingest/claude-hook`, `/ingest/grok-hook` and `/ingest/presence` (`server/index.ts`,
+`app/src/server.ts`). Verified by running the pre-fix server alongside the fixed one and
+JSON-parsing both replies: old → fails, reproducing the error string verbatim; new → parses.
+NB hooks are read at session start, so a settings change needs a fresh Claude Code session.
+
+Reported by @bgarrak, surfaced in a session transcript while testing PR #1.
+
 ## Status: working v3 ✅ — desktop app
 
 All components run together: `bun run server` + `bun run client` + `bun run presence`

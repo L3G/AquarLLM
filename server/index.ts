@@ -103,13 +103,15 @@ const server = Bun.serve({
 
     if (req.method === "POST" && url.pathname === "/ingest/claude-hook") {
       // Fire-and-forget: always answer 200 so a live Claude session is never blocked.
+      // The body MUST be JSON — Claude Code validates `type:"http"` hook responses and
+      // surfaces an error per hook fire otherwise (a bare "ok" broke every tool call).
       try {
         const event = normalizeClaudeHook(await req.json());
         if (event) record(server, event);
       } catch {
         // swallow malformed payloads
       }
-      return new Response("ok", { headers: CORS });
+      return Response.json({ continue: true }, { headers: CORS });
     }
 
     if (req.method === "POST" && url.pathname === "/ingest/grok-hook") {
@@ -119,7 +121,7 @@ const server = Bun.serve({
       } catch {
         // swallow malformed payloads
       }
-      return new Response("ok", { headers: CORS });
+      return Response.json({ continue: true }, { headers: CORS });
     }
 
     if (req.method === "POST" && url.pathname === "/ingest/presence") {
@@ -133,7 +135,7 @@ const server = Bun.serve({
       } catch {
         // ignore malformed payloads
       }
-      return new Response("ok", { headers: CORS });
+      return Response.json({ continue: true }, { headers: CORS });
     }
 
     if (url.pathname === "/") {
