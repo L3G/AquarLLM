@@ -17,9 +17,9 @@
   },
   "scripts": {
     "build:client": "cd ../client && bun run build",
-    "bundle": "node build.mjs",
+    "bundle": "bun build.mjs",
     "build": "bun run build:client && bun run bundle",
-    "standalone": "node dist/standalone.cjs",
+    "standalone": "bun dist/standalone.cjs",
     "start": "bun run build && electron .",
     "dist": "bun run build && electron-builder"
   },
