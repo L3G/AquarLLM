@@ -11,6 +11,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { type AgentEvent, type AgentState, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
 import { World } from "../../server/world.ts";
 import { Clio } from "../../server/clio.ts";
+import { Atlas } from "../../server/resources.ts";
 import { normalizeClaudeHook } from "../../server/normalize.ts";
 import { normalizeGrokHook } from "../../server/normalize-grok.ts";
 
@@ -30,6 +31,8 @@ export interface ServerHandle {
   world: World;
   port: number;
   broadcast(): void;
+  /** Feed an in-process adapter through the same event/log path as HTTP ingestion. */
+  record(event: AgentEvent): void;
   /** Village (repo) id for a cwd, cached — for presence from the in-process Hypnos. */
   resolveRepo(cwd: string | undefined): string | undefined;
   close(): void;
@@ -58,6 +61,7 @@ function makeLog(ev: AgentEvent, prev: AgentState | undefined): LogEntry | null 
 export function startServer(opts: { port: number; clientDir: string }): Promise<ServerHandle> {
   const world = new World();
   const clio = new Clio(); // resolves each cwd to a repo (village) + its history/size
+  const atlas = new Atlas();
   const clients = new Set<WebSocket>();
   const send = (msg: string) => { for (const c of clients) if (c.readyState === 1) c.send(msg); };
   // Coalesce snapshots + batch log events to ~12.5Hz so a burst of agent activity
@@ -140,18 +144,23 @@ export function startServer(opts: { port: number; clientDir: string }): Promise<
       ws.send(JSON.stringify(world.snapshot()));
       ws.send(JSON.stringify({ type: "repos", repos: clio.list() }));
       ws.send(JSON.stringify({ type: "log", entries: world.recentLog() }));
+      ws.send(JSON.stringify(atlas.snapshot()));
       ws.on("close", () => clients.delete(ws));
       ws.on("error", () => clients.delete(ws));
     });
   });
 
   const reaper = setInterval(() => { if (world.reap(REAP_AFTER_MS).length) broadcast(); }, 30_000);
+  httpServer.once("close", () => atlas.stop());
 
   return new Promise((resolve) => {
-    httpServer.listen(opts.port, () => resolve({
-      world, port: opts.port, broadcast,
-      resolveRepo: (cwd) => clio.resolve(cwd),
-      close: () => { clearInterval(reaper); if (flushTimer) clearTimeout(flushTimer); for (const c of clients) c.close(); wss.close(); httpServer.close(); },
-    }));
+    httpServer.listen(opts.port, () => {
+      atlas.start((snapshot) => send(JSON.stringify(snapshot)));
+      resolve({
+        world, port: opts.port, broadcast, record,
+        resolveRepo: (cwd) => clio.resolve(cwd),
+        close: () => { atlas.stop(); clearInterval(reaper); if (flushTimer) clearTimeout(flushTimer); for (const c of clients) c.close(); wss.close(); httpServer.close(); },
+      });
+    });
   });
 }

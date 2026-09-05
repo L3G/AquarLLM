@@ -1,10 +1,12 @@
 /** WebSocket client to Hermes with auto-reconnect. */
-import type { LogEntry, RepoInfo, WorldSnapshot } from "@aquarllm/shared";
+import type { LogEntry, RepoInfo, SystemResourcesMessage, WorldSnapshot } from "@aquarllm/shared";
 
 interface Handlers {
   snapshot: (snap: WorldSnapshot) => void;
   log?: (entries: LogEntry[]) => void;
   repos?: (repos: RepoInfo[]) => void;
+  resources?: (resources: SystemResourcesMessage) => void;
+  connection?: (connected: boolean) => void;
 }
 
 export function connect(url: string, handlers: Handlers): void {
@@ -16,6 +18,7 @@ export function connect(url: string, handlers: Handlers): void {
     ws.onopen = () => {
       retry = 500;
       setStatus(true);
+      handlers.connection?.(true);
     };
     ws.onmessage = (e) => {
       try {
@@ -23,12 +26,14 @@ export function connect(url: string, handlers: Handlers): void {
         if (msg?.type === "snapshot") handlers.snapshot(msg as WorldSnapshot);
         else if (msg?.type === "log") handlers.log?.((msg as { entries: LogEntry[] }).entries);
         else if (msg?.type === "repos") handlers.repos?.((msg as { repos: RepoInfo[] }).repos);
+        else if (msg?.type === "resources") handlers.resources?.(msg as SystemResourcesMessage);
       } catch {
         // ignore non-JSON frames
       }
     };
     ws.onclose = () => {
       setStatus(false);
+      handlers.connection?.(false);
       setTimeout(open, retry);
       retry = Math.min(retry * 2, 5000);
     };

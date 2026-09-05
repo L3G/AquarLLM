@@ -1,0 +1,104 @@
+.atlas {
+  --atlas-teal: #7fd0cb;
+  --atlas-gold: #e0b474;
+  --mill-duration: 20s;
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 16;
+  width: 224px;
+  color: #d6dae2;
+  background: rgba(13, 17, 23, 0.97);
+  border: 1px solid #34434a;
+  border-top: 2px solid #688a7f;
+  border-radius: 7px 7px 3px 3px;
+  box-shadow: 0 3px 0 #080d12, 0 10px 24px #0003;
+  font: 10px "JetBrains Mono", ui-monospace, monospace;
+  overflow: hidden;
+}
+
+.atlas-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 39px;
+  padding: 6px 9px 6px 11px;
+  background: linear-gradient(100deg, #25332c66, #1c273022);
+  border-bottom: 1px solid #ffffff0b;
+}
+
+.atlas-heading > div { display: flex; align-items: baseline; gap: 8px; }
+.atlas-name { color: #f0dfb5; font: 12px "Silkscreen", monospace; letter-spacing: 1px; }
+.atlas-subtitle { color: #8aa69e; font-size: 8px; letter-spacing: 0.6px; }
+.atlas-toggle {
+  width: 25px;
+  height: 25px;
+  border: 1px solid #3f5148;
+  border-radius: 3px;
+  background: #121b1b;
+  color: #b9cdc0;
+  font: 16px "JetBrains Mono", monospace;
+  line-height: 1;
+  cursor: pointer;
+}
+.atlas-toggle:hover { background: #293c34; color: #f0dfb5; }
+.atlas-toggle:focus-visible { outline: 2px solid var(--atlas-teal); outline-offset: 2px; }
+.atlas-body[hidden] { display: none; }
+.atlas-host {
+  padding: 7px 10px 5px;
+  font-size: 8px;
+  color: #81949f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atlas-host span { color: #bcc8ca; }
+.atlas-metrics { padding: 0 9px; }
+.atlas-metric { display: grid; grid-template-columns: 45px minmax(0, 1fr); gap: 6px; padding: 7px 0; }
+.atlas-metric + .atlas-metric { border-top: 1px solid #ffffff0b; }
+.atlas-art { align-self: center; width: 45px; height: 45px; }
+.atlas-art svg { display: block; width: 100%; height: 100%; overflow: visible; shape-rendering: crispEdges; }
+.atlas-metric-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; line-height: 12px; }
+.atlas-metric-head > span { color: #dddfd8; font-size: 9px; white-space: nowrap; }
+.atlas-value { color: #e9d8b2; font-size: 11px; font-weight: 600; }
+.atlas-detail { color: #9aabb4; font-size: 9px; line-height: 14px; white-space: nowrap; }
+.atlas-track { height: 4px; margin: 2px 0 4px; background: #2a3439; overflow: hidden; }
+.atlas-track span { display: block; height: 100%; width: 0; background: #d5ad6d; transition: width 0.6s ease; }
+[data-metric="memory"] .atlas-track span { background: #7bc7c0; }
+[data-metric="disk"] .atlas-track span { background: #b38a65; }
+.atlas-caption { min-height: 10px; color: #97a596; font-size: 8px; line-height: 10px; white-space: nowrap; }
+.atlas-metric meter {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.atlas-status { display: flex; align-items: center; gap: 5px; padding: 7px 10px 5px; border-top: 1px solid #ffffff0b; font-size: 9px; }
+.atlas-beacon { flex: none; width: 5px; height: 5px; background: #7a8995; box-shadow: 0 0 0 2px #7a899515; }
+.atlas-status-label { color: #b3c0c2; }
+.atlas-age { margin-left: auto; color: #9ca9b5; font-size: 7px; }
+.atlas-note { margin: 0; padding: 0 10px 8px; color: #83929a; font-size: 8px; line-height: 11px; }
+.atlas-mill-sails { transform-box: view-box; transform-origin: 24px 22px; animation: atlas-milling var(--mill-duration) linear infinite; }
+.atlas-crate-box { fill: #423e36; }
+.atlas-crate-brace { fill: #574b3c; }
+.atlas-crate.filled .atlas-crate-box { fill: #cba365; }
+.atlas-crate.filled .atlas-crate-brace { fill: #886b41; }
+.atlas[data-freshness="live"] .atlas-beacon { background: #7fca9e; box-shadow: 0 0 0 2px #7fca9e15; }
+.atlas[data-freshness="offline"] .atlas-beacon,
+.atlas[data-freshness="stale"] .atlas-beacon { background: #d7ae6f; }
+.atlas:not([data-freshness="live"]) .atlas-mill-sails,
+.atlas[data-milling="false"] .atlas-mill-sails,
+.atlas[data-collapsed="true"] .atlas-mill-sails { animation-play-state: paused; }
+.atlas:not([data-freshness="live"]) .atlas-metrics { opacity: 0.62; }
+.atlas-metric[data-available="false"] .atlas-art,
+.atlas-metric[data-stale="true"] .atlas-art { opacity: 0.5; filter: saturate(0.3); }
+.atlas-metric[data-stale="true"] .atlas-caption { color: #d7ae6f; }
+@keyframes atlas-milling { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .atlas-mill-sails { animation: none; }
+  .atlas-track span { transition: none; }
+}

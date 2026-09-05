@@ -9,7 +9,8 @@
  * only), smaller footprints with paved lanes, per-room materials/rugs/props, doorways,
  * and beach rings. Raw 2D canvas (sanctioned by the handoff README).
  */
-import type { AgentState } from "@aquarllm/shared";
+import type { AgentState, SystemResourcesMessage } from "@aquarllm/shared";
+import { AtlasDistrict } from "./atlas-world.ts";
 
 // Hermes Activity → design activity.
 const ACT_MAP: Record<string, string> = {
@@ -27,6 +28,7 @@ export class LivingCity {
     this.cam = { x: 0, y: 0, z: 0.85 };
     this.userControlled = false;
     this.leftGutter = 0;
+    this.resourcePanelHeight = 0;
 
     this.factions = { claude: "#d97757", codex: "#10a37f", grok: "#9aa0a6", custom: "#9b7cf0" };
     this.factionKeys = ["claude", "codex", "grok", "custom"];
@@ -90,7 +92,7 @@ export class LivingCity {
 
     this.colorPool = ["#e0664f", "#46b39a", "#a07cf0", "#e0a23c", "#4f8fe0", "#e06a9a", "#56b870", "#5ac8d9", "#cf8a3c", "#8a7be0", "#d2607a", "#6ab04c", "#dd7bd0", "#4fb0a0"];
 
-    this.A = 98; this.B = 49;
+    this.A = 98; this.B = 49; this.MIN_ZOOM = 0.18;
     this.walkSpeed = 24;
     this.anchors = { read: { x: -31, y: -8 }, think: { x: -11, y: -15 }, edit: { x: 11, y: -15 }, run: { x: 31, y: -8 }, search: { x: 24, y: 10 }, wait: { x: -24, y: 10 } };
     this.bedSlots = [{ x: -13, y: 18 }, { x: 3, y: 21 }, { x: 17, y: 16 }, { x: -2, y: 12 }];
@@ -182,7 +184,34 @@ export class LivingCity {
     this.MAX_CARAVANS = 3; this.caravanSpeed = 28;
     this.SURPLUS_MIN = 35; this.DEFICIT_MAX = 22; this.TRADE_AMT = 18;
 
+    // Public works belong to the computer, not a repo. Reserving their real cells
+    // gives an empty harbour land and keeps future villages clear of the buildings.
+    this.atlasDistrict = new AtlasDistrict();
+    this.resourceIslandVisible = true;
+    for (const p of this.atlasDistrict.parcels) {
+      this.civics.push(p);
+      this.occ[p.cell.cx + "," + p.cell.cy] = p.id;
+    }
+    this.syncProjectsArray();
     this._initControls();
+  }
+  setSystemResources(sample: SystemResourcesMessage) { this.atlasDistrict.setResources(sample); }
+  setResourcesConnected(connected: boolean) { this.atlasDistrict.setConnected(connected); }
+  setResourceIslandVisible(visible: boolean) {
+    if (this.resourceIslandVisible === visible) return;
+    this.resourceIslandVisible = visible;
+    // Keep the occupied cells reserved even while hidden: villages arriving later must
+    // leave room for Atlas to return without relocating their houses or live agents.
+    this.syncProjectsArray();
+    this._land = this.computeLand(this.projects.filter(p => p.life > 0.02)).land;
+    this._landSig = null; this._npcWalkSig = null; this._npcWalk = null; this._hov = [];
+    const walk = this.npcWalkable(), allowed = new Set(walk);
+    const keyAt = (x, y) => { const c = this.worldToCell(x, y); return c.cx + "," + c.cy; };
+    // Retire ambient townsfolk on vanished commons and retarget those still ashore.
+    // Repo residents and real agents belong to their villages and are left intact.
+    this.npcs = this.npcs.filter(n => allowed.has(keyAt(n.wx, n.wy)));
+    for (const n of this.npcs) if (!allowed.has(keyAt(n.tx, n.ty))) this.npcPickTarget(n, walk);
+    if (!walk.length) this.npcTarget = 0;
   }
   world() { return this.worlds[this.state.world]; }
   get worldKey() { return this.state.world; }
@@ -319,8 +348,8 @@ export class LivingCity {
     return v;
   }
   removeVillage(v) { for (const c of v.cells || []) if (this.occ[c.cx + "," + c.cy] === v.id) delete this.occ[c.cx + "," + c.cy]; this.villages.delete(v.id); this._landSig = null; this._roadSig = ""; }
-  // Keep this.projects (drawn/iterated list) = civics + villages, in sync after every change.
-  syncProjectsArray() { this.projects = [...this.civics, ...this.villages.values()]; }
+  // Reservations outlive visibility; only visible civics contribute land or camera bounds.
+  syncProjectsArray() { this.projects = [...this.civics.filter(p => !p.resource || this.resourceIslandVisible), ...this.villages.values()]; }
   addCivic(kind, cell) { const meta = kind === "git"
       ? { name: "git-yard", color: "#c98a3c", slots: [{ x: -26, y: -2 }, { x: 0, y: -6 }, { x: 26, y: -2 }, { x: -13, y: 9 }, { x: 13, y: 9 }] }
       : { name: "build-yard", color: "#56b870", slots: [{ x: -28, y: -2 }, { x: -9, y: -7 }, { x: 11, y: -7 }, { x: 29, y: -2 }, { x: 0, y: 11 }] };
@@ -480,6 +509,7 @@ export class LivingCity {
     a.phase += dt * (a.walking ? 7 : 2.6); return true; }
 
   update(dt, t) {
+    if (this.resourceIslandVisible) this.atlasDistrict.update(dt, this.paused);
     for (let i = this.projects.length - 1; i >= 0; i--) {
       const p = this.projects[i]; p.life += (p.target - p.life) * Math.min(1, dt * 3);
       if (p.civic) continue;
@@ -605,7 +635,7 @@ export class LivingCity {
   updateCamera(dt) { const live = this.projects.filter(p => p.life > 0.05); if (!live.length) return; let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
     for (const p of live) for (const c of (p.cells || [p.cell])) { const w = this.worldPos(c); minx = Math.min(minx, w.x); maxx = Math.max(maxx, w.x); miny = Math.min(miny, w.y); maxy = Math.max(maxy, w.y); }
     const pad = 180; const bw = (maxx - minx) + pad * 2, bh = (maxy - miny) + pad * 2; const availW = this._W - 250 - this.leftGutter, availH = this._H - 30;
-    let tz = Math.min(availW / bw, availH / bh); tz = Math.max(0.5, Math.min(1.05, tz)); const tx = (minx + maxx) / 2, ty = (miny + maxy) / 2; const k = 1 - Math.pow(0.0002, dt);
+    let tz = Math.min(availW / bw, availH / bh); tz = Math.max(this.MIN_ZOOM, Math.min(1.05, tz)); const tx = (minx + maxx) / 2, ty = (miny + maxy) / 2; const k = 1 - Math.pow(0.0002, dt);
     this.cam.x += (tx - this.cam.x) * k; this.cam.y += (ty - this.cam.y) * k; this.cam.z += (tz - this.cam.z) * k; }
 
   _initControls() {
@@ -629,7 +659,7 @@ export class LivingCity {
       if (!f) return; this.userControlled = true; this.zoomAt(this._vcx, this._vcy, f);
     });
   }
-  zoomAt(sx, sy, factor) { const z = this.cam.z, z2 = Math.max(0.3, Math.min(2.5, z * factor)); this.cam.x += (sx - this._vcx) * (1 / z - 1 / z2); this.cam.y += (sy - this._vcy) * (1 / z - 1 / z2); this.cam.z = z2; }
+  zoomAt(sx, sy, factor) { const z = this.cam.z, z2 = Math.max(this.MIN_ZOOM, Math.min(2.5, z * factor)); this.cam.x += (sx - this._vcx) * (1 / z - 1 / z2); this.cam.y += (sy - this._vcy) * (1 / z - 1 / z2); this.cam.z = z2; }
 
   /* ---------- background ---------- */
   rebuildBg() { const w = this.world(); this._bg = {};
@@ -1162,12 +1192,13 @@ export class LivingCity {
   }
 
   /* ---------- HUD ---------- */
-  drawHUD(ctx) { const pw = 224, px = this._W - pw - 14, py = 14, ph = this._H - 28;
+  drawHUD(ctx) { const pw = 224, px = this._W - pw - 14, py = 14, ph = this._H - 28 - this.resourcePanelHeight;
+    if (ph < 100) return;
     ctx.fillStyle = "rgba(13,15,20,0.9)"; ctx.fillRect(px, py, pw, ph); ctx.strokeStyle = "#262d38"; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
     const live = this.simPool(); let tot = 0; for (const p of live) tot += p.agents.length;
     ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#cdd3dc"; ctx.font = "700 11px 'JetBrains Mono',monospace"; ctx.fillText("VILLAGES", px + 12, py + 18);
     ctx.fillStyle = "#5b636f"; ctx.font = "10px 'JetBrains Mono',monospace"; ctx.textAlign = "right"; ctx.fillText(this.world().label.toLowerCase() + " · " + live.filter(p => !p.dormant).length + " active", px + pw - 12, py + 18); ctx.textAlign = "left";
-    const rows = [...live].sort((a, b) => b.agents.length - a.agents.length); const rowH = 34, top = py + 36, max = Math.floor((ph - 58 - 22) / rowH);
+    const rows = [...live].sort((a, b) => b.agents.length - a.agents.length); const rowH = 34, top = py + 36, max = Math.max(0, Math.floor((ph - 58 - 22) / rowH));
     for (let i = 0; i < Math.min(rows.length, max); i++) { const p = rows[i], y = top + i * rowH; this.ell(ctx, px + 18, y + 9, 5, 5, p.dormant ? this.rgbaA(p.color, 0.4) : p.color);
       ctx.fillStyle = p.dormant ? "#7e8794" : "#e2e7ee"; ctx.font = "600 11px 'JetBrains Mono',monospace"; let nm = p.name; if (ctx.measureText(nm).width > 100) nm = nm.slice(0, 13); ctx.fillText(nm, px + 30, y + 9);
       const tierTxt = p.tier ? p.tier.name : ""; ctx.fillStyle = p.dormant ? "#5b636f" : "#7e8794"; ctx.font = "10px 'JetBrains Mono',monospace"; ctx.textAlign = "right"; ctx.fillText(p.dormant ? "idle" : (p.agents.length + "a · " + tierTxt), px + pw - 12, y + 9); ctx.textAlign = "left";
@@ -1188,6 +1219,7 @@ export class LivingCity {
   resize() { const cv = this.canvas; if (!cv) return; const r = cv.getBoundingClientRect(); const dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); this._townW = r.width; this._townH = r.height; this._dpr = dpr; this.useTownViewport(); }
   useTownViewport() { this._W = this._townW; this._H = this._townH; this._vcx = this.leftGutter + (this._townW - this.leftGutter - 250) / 2; this._vcy = this._townH / 2; }
   setLeftGutter(px) { this.leftGutter = px || 0; }
+  setResourcePanelHeight(px) { this.resourcePanelHeight = Math.max(0, px); }
   drawTown(t) { const cv = this.canvas; if (!cv) return; this.useTownViewport(); const ctx = cv.getContext("2d");
     this.ensureStaticBg();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
@@ -1220,10 +1252,26 @@ export class LivingCity {
       for (const a of v.agents) { const s = this.project({ x: a.wx, y: a.wy }); const d = a.wy / this.B + 0.05; rl.push({ d, fn: () => this.drawWalker(ctx, s.x, s.y, a, t) }); personBox(s, d, { title: this.factionLabel(a.faction) + " agent", sub: (this.acts[a.act] ? this.acts[a.act].label : a.act) + " · " + v.name, accent: this.factions[a.faction] || v.accent }); }
       for (const n of v.residents) { const s = this.project({ x: n.wx, y: n.wy }); const d = n.wy / this.B + 0.05; rl.push({ d, fn: () => this.drawNPC(ctx, s.x, s.y, n, t) }); personBox(s, d, { title: "Villager", sub: "resident of " + v.name, accent: v.accent }); }
     }
-    for (const p of this.projects) { if (!p.civic || p.life <= 0.02) continue; rl.push({ d: p.cell.cx + p.cell.cy, fn: () => this.drawParcel(ctx, p, t) }); }
+    for (const p of this.projects) {
+      if (!p.civic || p.life <= 0.02) continue;
+      const d = p.cell.cx + p.cell.cy;
+      if (p.resource) {
+        const s = this.project(this.worldPos(p.cell));
+        rl.push({ d, fn: () => this.atlasDistrict.draw(ctx, this, p.resource, s.x, s.y, z, cozyTown ? this.todParams().amb : 1) });
+        hov.push({ x0: s.x - 65 * z, x1: s.x + 65 * z, y0: s.y - (p.resource === "cpu" ? 122 : 100) * z, y1: s.y + 42 * z, d, ...this.atlasDistrict.hover(p.resource) });
+      } else rl.push({ d, fn: () => this.drawParcel(ctx, p, t) });
+    }
     for (const n of this.npcs) { const sc = this.project({ x: n.wx, y: n.wy }); const d = n.wy / this.B + 0.05; rl.push({ d, fn: () => this.drawNPC(ctx, sc.x, sc.y, n, t) }); personBox(sc, d, { title: "Townsfolk", sub: "wandering the commons", accent: "#7fd0cb" }); }
     for (const c of this.caravans) { const sc = this.project({ x: c.wx, y: c.wy }); const d = c.wy / this.B + 0.12; rl.push({ d, fn: () => this.drawCaravan(ctx, sc.x, sc.y, c, t) }); personBox(sc, d, { title: "Trade caravan", sub: "hauling " + this.resMeta[c.res].label, accent: this.resMeta[c.res].color }); }
     rl.sort((u, v) => u.d - v.d); for (const it of rl) it.fn();
+    if (this.resourceIslandVisible) {
+      for (const p of this.atlasDistrict.parcels) {
+        const s = this.project(this.worldPos(p.cell));
+        this.atlasDistrict.drawLabel(ctx, p.resource, s.x, s.y, z);
+      }
+      const atlasBanner = this.project({ x: 0, y: -199 });
+      this.atlasDistrict.drawBanner(ctx, atlasBanner.x, atlasBanner.y, z);
+    }
     this.drawVillageBanners(ctx, t); // repo name + tier + stockpile, above each cluster
     this.drawHUD(ctx);
     this.drawHover(ctx); }

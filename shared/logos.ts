@@ -195,8 +195,33 @@ export interface LogMessage {
   entries: LogEntry[];
 }
 
+/** Atlas measures the machine running Hermes (not just this app or its agents). */
+export interface SystemResourcesMessage {
+  type: "resources";
+  /** Epoch ms of the latest CPU/memory sample. Disk has its own slower clock. */
+  sampledAt: number;
+  hostname: string;
+  cpu: {
+    /** Busy time across all logical cores. Null during warm-up or when unavailable. */
+    usagePercent: number | null;
+    cores: number;
+  };
+  /** Total minus free physical memory; includes OS caches, not memory pressure. */
+  memory: { usedBytes: number; totalBytes: number; usagePercent: number } | null;
+  disk: {
+    usedBytes: number;
+    totalBytes: number;
+    /** Space available to an ordinary user, excluding reserved free blocks. */
+    availableBytes: number;
+    usagePercent: number;
+    /** A path on the measured filesystem: the server user's home directory. */
+    volume: string;
+    sampledAt: number;
+  } | null;
+}
+
 /** Discriminated union of everything Hermes sends over the WebSocket. */
-export type ServerMessage = WorldSnapshot | LogMessage | RepoMessage;
+export type ServerMessage = WorldSnapshot | LogMessage | RepoMessage | SystemResourcesMessage;
 
 /** Build a friendly default display name from kind + id. */
 export function defaultDisplayName(kind: AgentKind, agentId: string): string {
