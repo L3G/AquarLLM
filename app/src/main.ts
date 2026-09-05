@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { startServer, type ServerHandle } from "./server.ts";
 import { startHypnos, type HypnosHandle } from "./hypnos.ts";
+import { startCodexPresence } from "./codex-presence.ts";
 import {
   installHooks, uninstallHooks, hooksStatus,
   grokAvailable, grokHooksStatus, installGrokHooks, uninstallGrokHooks,
@@ -16,6 +17,7 @@ import {
 const PORT = 8787;
 let server: ServerHandle | null = null;
 let hypnos: HypnosHandle | null = null;
+let codexPresence: ReturnType<typeof startCodexPresence> | null = null;
 let tray: Tray | null = null;
 let win: BrowserWindow | null = null;
 
@@ -38,6 +40,10 @@ async function init(): Promise<void> {
     grokSessionsFile: join(homedir(), ".grok", "active_sessions.json"),
     report: (id, proj, kind, cwd) => { if (server!.world.presence(id, proj, proj, Date.now(), kind, cwd, server!.resolveRepo(cwd))) server!.broadcast(); },
     leave: (id) => { if (server!.world.apply({ agentKind: "claude", agentId: id, activity: "left", ts: Date.now() })) server!.broadcast(); },
+  });
+  codexPresence = startCodexPresence({
+    report: (event) => server!.record(event),
+    leave: (agentId) => server!.record({ agentKind: "codex", agentId, activity: "left", ts: Date.now() }),
   });
   try { if (!hooksStatus(PORT).installed) installHooks(PORT); } catch (e) { console.error("hook install failed:", e); }
   try { if (grokAvailable() && !grokHooksStatus().installed) installGrokHooks(PORT); } catch (e) { console.error("grok hook install failed:", e); }
@@ -100,6 +106,6 @@ function showWindow(): void {
 }
 
 function quit(): void {
-  try { server?.close(); hypnos?.stop(); } catch { /* ignore */ }
+  try { codexPresence?.stop(); hypnos?.stop(); server?.close(); } catch { /* ignore */ }
   app.exit(0);
 }

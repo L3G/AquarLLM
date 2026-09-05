@@ -9,6 +9,7 @@ import type { Server, ServerWebSocket } from "bun";
 import { type AgentEvent, type AgentState, type LogEntry, defaultDisplayName } from "@aquarllm/shared";
 import { World } from "./world.ts";
 import { Clio } from "./clio.ts";
+import { Atlas } from "./resources.ts";
 import { normalizeClaudeHook } from "./normalize.ts";
 import { normalizeGrokHook } from "./normalize-grok.ts";
 
@@ -20,6 +21,7 @@ const WORLD_TOPIC = "world";
 
 const world = new World();
 const clio = new Clio(); // resolves each cwd to a repo (village) + its history/size
+const atlas = new Atlas();
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -152,6 +154,7 @@ const server = Bun.serve({
       ws.send(JSON.stringify(world.snapshot()));
       ws.send(JSON.stringify({ type: "repos", repos: clio.list() }));
       ws.send(JSON.stringify({ type: "log", entries: world.recentLog() }));
+      ws.send(JSON.stringify(atlas.snapshot()));
     },
     close(ws: ServerWebSocket) {
       ws.unsubscribe(WORLD_TOPIC);
@@ -162,9 +165,19 @@ const server = Bun.serve({
   },
 });
 
-setInterval(() => {
+atlas.start((snapshot) => server.publish(WORLD_TOPIC, JSON.stringify(snapshot)));
+
+const reaper = setInterval(() => {
   if (world.reap(REAP_AFTER_MS).length) broadcast(server);
 }, 30_000);
+
+const shutdown = () => {
+  atlas.stop();
+  clearInterval(reaper);
+  void server.stop(true);
+};
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
 
 console.log(
   `Hermes listening on http://localhost:${PORT}\n` +

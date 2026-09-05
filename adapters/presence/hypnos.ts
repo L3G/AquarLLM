@@ -15,6 +15,8 @@
  * macOS-specific (uses `ps` + `lsof`). Read-only: it never touches your sessions.
  */
 import { readdirSync, statSync } from "node:fs";
+import { startCodexPresence } from "../../app/src/codex-presence.ts";
+import type { AgentEvent } from "@aquarllm/shared";
 
 const HERMES = process.env.HERMES_URL ?? "http://localhost:8787";
 const HOME = process.env.HOME ?? "";
@@ -131,5 +133,19 @@ async function tick(): Promise<void> {
 }
 
 console.log(`Hypnos → presence heartbeat to ${HERMES} every ${TICK_MS}ms`);
+// The same read-only Codex detector runs in Electron and in the Bun dev workflow.
+const postCodex = (event: AgentEvent) => {
+  void fetch(`${HERMES}/ingest`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(event),
+  }).catch(() => {});
+};
+const codex = startCodexPresence({
+  report: postCodex,
+  leave: (agentId) => postCodex({ agentKind: "codex", agentId, activity: "left", ts: Date.now() }),
+});
 await tick();
-setInterval(tick, TICK_MS);
+const timer = setInterval(tick, TICK_MS);
+const stop = () => { codex.stop(); clearInterval(timer); };
+process.once("SIGINT", stop);
+process.once("SIGTERM", stop);

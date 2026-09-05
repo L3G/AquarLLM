@@ -105,6 +105,9 @@
         background: rgba(12, 13, 18, 0.6); border: 1px solid #1e222c;
         border-radius: 4px; padding: 5px 9px; pointer-events: none;
       }
+      @media (max-width: 999px) {
+        #tod { top: 44px; left: auto; right: 252px; transform: none; }
+      }
     </style>
   </head>
   <body>
@@ -116,6 +119,7 @@
     </header>
     <div id="worlds">
       <button data-world="harbor">Harbor</button>
+      <button id="atlas-island-toggle" type="button" aria-pressed="true">Resource island</button>
     </div>
 
     <div id="tod">
@@ -138,6 +142,8 @@
         <div class="lg-keys" id="lg-factions"></div>
       </div>
     </aside>
+
+    <aside id="atlas" aria-label="Atlas system resource monitor"></aside>
 
     <div id="hint">two-finger scroll / drag to pan · pinch to zoom · +/- · F to refit · L for log</div>
     <script type="module" src="/src/main.ts"></script>
